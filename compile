@@ -1,0 +1,1 @@
+gcc -g -o test http.o config.o match.o util.o logging.o main.o -levent
