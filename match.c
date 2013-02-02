@@ -28,7 +28,7 @@ match_list(char *url) {
   struct acl *node = al->data;
 
 #ifdef DEBUG
-  printf("URL: %s ", url);
+  printf("MATCHING URL: %s ", url);
 #endif
 
   do {

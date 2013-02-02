@@ -24,4 +24,3 @@ struct parsed_url *simple_parse_url(char *ori_url) {
   strcpy(ret->host, domain);
   return ret;
 }
-  

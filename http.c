@@ -13,6 +13,7 @@ typedef struct conn
   struct bufferevent *be_client, *be_server;
   char url[MAX_URL_LEN];
   char method[10];
+  char ver[10];
   struct proxy_t *proxy;
   int pos;
 } conn_t;
@@ -65,7 +66,7 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
 
     if (e & BEV_EVENT_ERROR) {
 
-      int err = evutil_socket_geterror(bufferevent_getfd(conn->be_server)); 
+      //int err = evutil_socket_geterror(bufferevent_getfd(conn->be_server)); 
       //printf("error code: %d, string: %s\n", err, evutil_socket_error_to_string(err)); 
       log_reset(conn->url);
 
@@ -118,7 +119,13 @@ read_client_direct(struct bufferevent *bev, void *ctx) {
       i_port = purl->port;
       host = purl->host;
 
-      bufferevent_read_buffer(bev, bufferevent_get_output(bevs));
+      struct evbuffer *output = bufferevent_get_output(bevs);
+      char *pos = conn->url + 10;
+      while (pos[0] != '/')
+	pos++;
+
+      evbuffer_add_printf(output, "%s %s %s\r\n", conn->method, pos, conn->ver);
+      bufferevent_read_buffer(bev, output);
 
     }
 
@@ -142,12 +149,17 @@ read_client_http_proxy(struct bufferevent *bev, void *ptr) {
   conn_t *conn = ptr;
   struct bufferevent *bevs;
 
+
   bevs = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
 
   conn->be_client = bev;
   conn->be_server = bevs;
 
-  if (bufferevent_read_buffer(bev, bufferevent_get_output(bevs)) == -1) 
+  struct evbuffer *output =  bufferevent_get_output(bevs);
+
+  evbuffer_add_printf(output, "%s %s %s\r\n", conn->method, conn->url, conn->ver);
+
+  if (bufferevent_read_buffer(bev, output) == -1) 
     perror("error");
 
   bufferevent_setcb(bevs, NULL, NULL, server_event, conn);
@@ -175,18 +187,12 @@ find out requested url and apply switching rules  */
 
   struct evbuffer *buffer = bufferevent_get_input(bev);
 
-  struct evbuffer_ptr it;
   char *line;
-  size_t line_len;
+  line = evbuffer_readln(bufferevent_get_input(bev), NULL, EVBUFFER_EOL_ANY);
 
-  it = evbuffer_search_eol(buffer, NULL, NULL, EVBUFFER_EOL_ANY);
-  line_len = it.pos;
-  line = malloc(it.pos+1);
+  sscanf(line, "%s %s %s", conn->method, conn->url, conn->ver);
 
-  evbuffer_copyout(buffer, line, line_len);
-  line[line_len] = '\0';
-
-  sscanf(line, "%s %s", conn->method, conn->url);
+  printf("%s %s\n", conn->method, conn->url);
 
   if (conn->url[0] == '/' ){
     rpc(bev, ctx, buffer);
@@ -202,7 +208,7 @@ find out requested url and apply switching rules  */
     read_client_http_proxy(bev, conn);
 
   else 
-      
+ 
     read_client_direct(bev, conn);
   
 }

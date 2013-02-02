@@ -16,7 +16,7 @@ void rpc(struct bufferevent *bev, void *ctx, struct evbuffer *buffer) {
   }
   char cont[] = "<html><head><title>HELLO</title></head>"
     "<body>WORLD</body></html>";
-  char str[5];
+  //char str[5];
 
   evbuffer_add_printf(bufferevent_get_output(bev), 
 		      "HTTP/1.1 200 OK\r\n"
