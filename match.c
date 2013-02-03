@@ -31,9 +31,9 @@ match_list(char *url) {
   printf("MATCHING URL: %s ", url);
 #endif
 
-  do {
+  while (node != NULL) {
     readln_pos = 0;
-    do {
+    while (1) {
       readline(buf, node->data);
       if (buf[0] == 0) break;
 
@@ -45,9 +45,9 @@ match_list(char *url) {
 #endif
 	return node->proxy;
       }
-    } while (1);
+    }
     node = node->next;
-  } while (node != NULL);
+  }
 
 
 #ifdef DEBUG

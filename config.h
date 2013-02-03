@@ -18,6 +18,7 @@ struct proxylist {
 };
 
 struct acl {
+  char *name;
   char *data;
   struct proxy_t *proxy;
   struct acl *next;
@@ -40,6 +41,8 @@ conf *config;
 void load_config();
 
 void save_config();
+
+void update_list(char *list, char *proxyname, char *listname);
 
 //void free_config();
 

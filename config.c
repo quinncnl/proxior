@@ -1,6 +1,7 @@
 #include "config.h"
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static void
 add_proxy(struct proxylist *pl, char *name, char *ap) {
@@ -46,6 +47,7 @@ add_acl(struct acllist *al, char *proxy_name, char *list) {
     fread(buffer, s, 1, fh);
   fclose(fh);
 
+  acl->name = strdup(list);
   acl->proxy = find_proxy(proxy_name);
   acl->data = buffer;
   acl->next = al->data;
@@ -100,6 +102,11 @@ void load_config() {
 
 }
 
+void update_list(char *list, char *proxyname, char *listname) {
+  FILE *fh = fopen(listname, "w");
+  fwrite(list, 1, strlen(list), fh);
+  fclose(fh);
+}
 /*
 void free_config() {
   struct proxy_t *node_p = config->proxy_h;

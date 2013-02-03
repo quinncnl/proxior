@@ -7,6 +7,17 @@
 
 extern conf *config;
 
+typedef struct conn
+{
+  struct bufferevent *be_client, *be_server;
+  char url[MAX_URL_LEN];
+  char method[10];
+  char ver[10];
+  struct proxy_t *proxy;
+  int pos;
+  int config;
+} conn_t;
+
 #define CONNECT_DIRECT 1
 #define CONNECT_HTTP_PROXY 2
 

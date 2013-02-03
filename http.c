@@ -8,15 +8,6 @@
 
 /* Connect to server and proxy */
 
-typedef struct conn
-{
-  struct bufferevent *be_client, *be_server;
-  char url[MAX_URL_LEN];
-  char method[10];
-  char ver[10];
-  struct proxy_t *proxy;
-  int pos;
-} conn_t;
 
 /* read data from server to client */
 
@@ -115,6 +106,7 @@ read_client_direct(struct bufferevent *bev, void *ctx) {
   else 
     {
       // e.g. GET http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html HTTP/1.1
+      printf("%s\n", conn->url);
       purl = simple_parse_url(conn->url);
       i_port = purl->port;
       host = purl->host;
@@ -182,10 +174,16 @@ read_client(struct bufferevent *bev, void *ctx) {
     return;
   }
 
+  struct evbuffer *buffer = bufferevent_get_input(bev);
+
+  if (conn->config) {
+    rpc(bev, ctx, buffer);
+    return;
+  }
+
   /* the first time talk to client
 find out requested url and apply switching rules  */
 
-  struct evbuffer *buffer = bufferevent_get_input(bev);
 
   char *line;
   line = evbuffer_readln(bufferevent_get_input(bev), NULL, EVBUFFER_EOL_ANY);
@@ -196,6 +194,8 @@ find out requested url and apply switching rules  */
 
   if (conn->url[0] == '/' ){
     rpc(bev, ctx, buffer);
+    conn->config = 1;
+    free(line);
     return;
   }
 
@@ -216,27 +216,25 @@ find out requested url and apply switching rules  */
 
 static void 
 client_event(struct bufferevent *bev, short e, void *ptr) {
-
   conn_t *conn = ptr;
   int fin = 0;
+
   if (e & BEV_EVENT_CONNECTED) {
     bufferevent_set_timeouts(bev, &config->timeout, &config->timeout);
   }
-  else if (e & BEV_EVENT_ERROR){
+  if (e & BEV_EVENT_ERROR){
     perror("Client Error\n");
     fin = 1;
   }
   if (e & BEV_EVENT_EOF) {
-#ifdef DEBUG
-    printf("Client EOF\n");
-#endif
+    //printf("Client EOF\n");
     fin = 1;
   }
   if (e & BEV_EVENT_TIMEOUT) {
     printf("CLIENT TIMEOUT \n");
     fin = 1;
   }
-    
+  
   //  printf("Close from client\n");
   if (fin) {
     // close connection
@@ -256,7 +254,8 @@ accept_conn_cb(struct evconnlistener *listener,
 
   conn_t *conn = malloc(sizeof(conn_t));
   conn->be_server = conn->be_client = NULL;
-  
+  conn->config = 0;
+
   bufferevent_setcb(bev, read_client, NULL, client_event, conn);
   bufferevent_enable(bev, EV_READ|EV_WRITE);
 }
