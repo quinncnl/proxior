@@ -18,12 +18,14 @@ read_server(struct bufferevent *bev, void *ctx) {
   char version[10];
   int code;
 
-#ifdef DEBUG
 
+  /*
   char *buf = malloc(1024);
-  evbuffer_copyout(bufferevent_get_input(bev), buf, 1024);
-  printf("SERVER HEADER: %s\n", buf);
-#endif
+  char *line;
+  while ((line = evbuffer_readln(bufferevent_get_output(bev), NULL, EVBUFFER_EOL_ANY)) != NULL)
+    printf("SERVER HEADER: %s\n", line);
+  free(line);
+  */
 
   if (conn->pos == 0) {
     char *buf = malloc(128);
@@ -62,6 +64,9 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
       log_reset(conn->url);
 
     }
+
+    if (e & BEV_EVENT_TIMEOUT) ;
+    //      printf("SERVER TIMEOUT");
     
     bufferevent_free(conn->be_client);
     bufferevent_free(bev);
@@ -70,7 +75,7 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
   }
 }
 
-/* connect to server directly. need to take care of both http and htts */
+/* connect to server directly. need to take care of both http and https */
 
 static void
 read_client_direct(struct bufferevent *bev, void *ctx) {
@@ -97,8 +102,7 @@ read_client_direct(struct bufferevent *bev, void *ctx) {
       
       char *tmp;
       while ((tmp = evbuffer_readln(bufferevent_get_input(bev), NULL, EVBUFFER_EOL_ANY ))!=NULL);
-      //	printf("%s\n", tmp);
-      
+      //	printf("%s\n", tmp);      
 
       evbuffer_add_printf(bufferevent_get_output(bev), "HTTP/1.1 200 Connection established\r\n\r\n");
     }
@@ -106,7 +110,7 @@ read_client_direct(struct bufferevent *bev, void *ctx) {
   else 
     {
       // e.g. GET http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html HTTP/1.1
-      printf("%s\n", conn->url);
+
       purl = simple_parse_url(conn->url);
       i_port = purl->port;
       host = purl->host;
@@ -155,6 +159,7 @@ read_client_http_proxy(struct bufferevent *bev, void *ptr) {
     perror("error");
 
   bufferevent_setcb(bevs, NULL, NULL, server_event, conn);
+  bufferevent_enable(bevs, EV_READ|EV_WRITE);
 
   if(bufferevent_socket_connect_hostname(bevs, NULL, AF_UNSPEC, conn->proxy->host, conn->proxy->port) == -1) {
     perror("DNS failure\n");
@@ -166,6 +171,8 @@ read_client_http_proxy(struct bufferevent *bev, void *ptr) {
 static void
 read_client(struct bufferevent *bev, void *ctx) {
   conn_t *conn = ctx;
+  printf("read event\n");
+  fflush(stdout);
 
   if (conn->be_server != NULL) {
     //connected, foward data no matter to proxy or server

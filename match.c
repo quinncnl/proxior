@@ -3,46 +3,50 @@
 #include <string.h>
 #include "config.h"
 
-int readln_pos;
-
 static void
-readline(char *buf, char *list) {
+readline(char *buf, char *list, int *pos, int size) {
+  /* a list may be like this:
+   *
+   * facebook.com\r\nhttp://media-cache-*.pinterest.com/\r\n*
+   *
+   */
+
   int i = 0; 
-  int s = strlen(list);
-  while (readln_pos < s 
-	 && list[readln_pos] != '\n') {
-    buf[i] = list[readln_pos];
-    i++; readln_pos++;
+
+  while (*pos < size 
+	 && list[*pos] != '\n'
+	 && list[*pos] != '\r') {
+    buf[i] = list[*pos];
+    i++; (*pos)++;
   }
+  while (list[*pos] == '\n' || list[*pos] == '\r')
+    (*pos)++;
 
   buf[i] = 0;
-  readln_pos++;
 }
 
 struct proxy_t *
 match_list(char *url) {
   // 2KB line should be enough
   char buf[2048];
+  int pos = 0, size;
 
   struct acllist *al = config->acl_h;
   struct acl *node = al->data;
 
-#ifdef DEBUG
-  printf("MATCHING URL: %s ", url);
-#endif
-
   while (node != NULL) {
-    readln_pos = 0;
+    pos = 0;
     while (1) {
-      readline(buf, node->data);
+      
+      size = strlen(node->data);
+
+      readline(buf, node->data, &pos, size);
+
       if (buf[0] == 0) break;
 
       if (strcasestr(url, buf) != NULL 
 	  || !fnmatch(buf, url, FNM_CASEFOLD)) {
 
-#ifdef DEBUG
-	printf(" Matched: %s\n", url, buf);
-#endif
 	return node->proxy;
       }
     }

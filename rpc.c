@@ -47,6 +47,7 @@ ret(struct bufferevent *bev, char *rsps) {
 		      "HTTP/1.1 200 OK\r\n"
 		      "Content-Type: text/html\r\n"
 		      "Access-Control-Allow-Origin: *\r\n"
+		      "Connection: close\r\n"
 		      "Cache-Control: no-cache\r\n"
 		      "Content-Length: %d\r\n\r\n", (int) strlen(rsps));
 
@@ -72,7 +73,6 @@ void rpc(struct bufferevent *bev, void *ctx, struct evbuffer *buffer) {
     else if (strncmp(conn->url, "/getlist?", 9) == 0)
       get_list(rsps, conn->url+9);
 
-    ret(bev, rsps);
   }
   else if (strcmp(conn->method, "POST") == 0) {
     char *line;
@@ -85,7 +85,7 @@ void rpc(struct bufferevent *bev, void *ctx, struct evbuffer *buffer) {
 
       if (strcmp(header, "Content-Length:") == 0) {
 	size = atoi(header_v);
-	//printf("size: %d\n", size);
+	printf("size: %d\n", size);
 	break;
       }
     }
@@ -93,21 +93,28 @@ void rpc(struct bufferevent *bev, void *ctx, struct evbuffer *buffer) {
     while ((line = evbuffer_readln(buffer, NULL, EVBUFFER_EOL_ANY)) != NULL);
 
     content = malloc(size);
-    printf("read: %d\n", evbuffer_remove(buffer, content, size));
-
+    int read = evbuffer_remove(buffer, content, size);
+    if (read == 0) return;
     if (strncmp(conn->url, "/updatelist?", 12) == 0) {
       char *listname = conn->url+12;
 
       char *post_cont;
-      char *post_use;
       strtok(content, "=");
-      post_use = strtok(NULL, "&");
-      strtok(NULL, "=");
       post_cont = strtok(NULL, "");
+      
       char *decoded = malloc(strlen(post_cont)+1);
       urldecode2(decoded, post_cont);
-      update_list(decoded, post_use, listname);
-    }
-  }
+      update_list(decoded, listname);
+      strcpy(rsps, "OK");
 
+      free(decoded);
+
+    }
+
+    free(content);
+
+    
+  }
+  
+  ret(bev, rsps);
 }

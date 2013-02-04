@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <assert.h>
+
 
 static void
 add_proxy(struct proxylist *pl, char *name, char *ap) {
@@ -102,21 +104,25 @@ void load_config() {
 
 }
 
-void update_list(char *list, char *proxyname, char *listname) {
+void update_list(char *list, char *listname) {
+
   FILE *fh = fopen(listname, "w");
   fwrite(list, 1, strlen(list), fh);
   fclose(fh);
-}
-/*
-void free_config() {
-  struct proxy_t *node_p = config->proxy_h;
-  struct proxy_t *next;
-  while ((next = node_p->next) != NULL) {
-    free(node_p);
-    node_p = next;
+
+  //update cache
+  struct acl *it = config->acl_h->data;
+
+  while (it != NULL) {
+    if (strcmp(listname, it->name) == 0) break;
+    it = it->next;
   }
+  assert(it != NULL);
 
-  free(config);
+  int newsize = strlen(list);
+  if (strlen(it->data) < newsize) {
+    free(it->data);
+    it->data = malloc(newsize);
+  }
+  strcpy(it->data, list);
 }
-
-*/

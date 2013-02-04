@@ -42,7 +42,7 @@ void load_config();
 
 void save_config();
 
-void update_list(char *list, char *proxyname, char *listname);
+void update_list(char *list, char *listname);
 
 //void free_config();
 
