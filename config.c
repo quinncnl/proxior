@@ -119,7 +119,7 @@ void update_list(char *list, char *listname) {
   }
   assert(it != NULL);
 
-  int newsize = strlen(list);
+  int newsize = strlen(list) + 1;
   if (strlen(it->data) < newsize) {
     free(it->data);
     it->data = malloc(newsize);

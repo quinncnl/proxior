@@ -3,6 +3,7 @@
 #include "http.h"
 #include "util.h"
 #include <string.h>
+#include <event2/http.h>
 
 static void 
 get_proxies(char *rsps) {
@@ -103,7 +104,7 @@ void rpc(struct bufferevent *bev, void *ctx, struct evbuffer *buffer) {
       post_cont = strtok(NULL, "");
       
       char *decoded = malloc(strlen(post_cont)+1);
-      urldecode2(decoded, post_cont);
+      decoded = evhttp_decode_uri(post_cont);
       update_list(decoded, listname);
       strcpy(rsps, "OK");
 
