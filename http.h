@@ -16,6 +16,7 @@ typedef struct conn
   struct proxy_t *proxy;
   int pos;
   int config;
+  void *rpc;
 } conn_t;
 
 #define CONNECT_DIRECT 1

@@ -29,8 +29,8 @@ $.ajax({
 function dosubmit() {
     $.ajax({
 	type: "POST",
-	url: "http://192.168.0.6:9999/updatelist?"+curlist,
-	data: {S: $("#data").val()},
+	url: "http://192.168.0.6:9999/updatelist?list="+curlist,
+	data: {data: $("#data").val()},
 	success: function(rs) {
 
 	}

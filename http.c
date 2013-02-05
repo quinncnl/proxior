@@ -99,9 +99,13 @@ read_client_direct(struct bufferevent *bev, void *ctx) {
       port = strtok(NULL, "");
       i_port = atoi(port);
 
-      
+      /*******************************
+********************
+TODO HERE
+********************
+********************/
       char *tmp;
-      while ((tmp = evbuffer_readln(bufferevent_get_input(bev), NULL, EVBUFFER_EOL_ANY ))!=NULL);
+      while ((tmp = evbuffer_readln(bufferevent_get_input(bev), NULL, EVBUFFER_EOL_ANY ))!=NULL)free(tmp);
       //	printf("%s\n", tmp);      
 
       evbuffer_add_printf(bufferevent_get_output(bev), "HTTP/1.1 200 Connection established\r\n\r\n");
@@ -171,11 +175,11 @@ read_client_http_proxy(struct bufferevent *bev, void *ptr) {
 static void
 read_client(struct bufferevent *bev, void *ctx) {
   conn_t *conn = ctx;
-  printf("read event\n");
-  fflush(stdout);
+  //  printf("read event\n");
+  //  fflush(stdout);
 
   if (conn->be_server != NULL) {
-    //connected, foward data no matter to proxy or server
+    //connected, foward client data no matter to proxy or server
 
     bufferevent_read_buffer(bev, bufferevent_get_output(conn->be_server));
     return;
@@ -184,6 +188,7 @@ read_client(struct bufferevent *bev, void *ctx) {
   struct evbuffer *buffer = bufferevent_get_input(bev);
 
   if (conn->config) {
+    //direct to rpc
     rpc(bev, ctx, buffer);
     return;
   }
@@ -259,9 +264,7 @@ accept_conn_cb(struct evconnlistener *listener,
 	       void *ctx) {
   struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
 
-  conn_t *conn = malloc(sizeof(conn_t));
-  conn->be_server = conn->be_client = NULL;
-  conn->config = 0;
+  conn_t *conn = calloc(sizeof(conn_t), 1);
 
   bufferevent_setcb(bev, read_client, NULL, client_event, conn);
   bufferevent_enable(bev, EV_READ|EV_WRITE);
