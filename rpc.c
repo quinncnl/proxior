@@ -15,30 +15,27 @@ struct post {
 };
 
 static void 
-get_proxies(char *rsps) {
+get_proxies(struct evbuffer *rsps) {
   struct proxy_t *it = config->proxy_h->data;
   
-  char *pos = rsps;
   while (it != NULL) {
-    pos += sprintf(pos, "%s,%s:%d\n", it->name, it->host, it->port);
+    evbuffer_add_printf(rsps, "%s,%s:%d\n", it->name, it->host, it->port);
     it = it->next;
   }
 }
 
 static void 
-get_lists(char rsps[]) {
+get_lists(struct evbuffer *rsps) {
   struct acl *it = config->acl_h->data;
   
-  char *pos = rsps;
-
   while (it != NULL) {
-    pos += sprintf(pos, "%s,%s\n", it->name, it->proxy->name);
+    evbuffer_add_printf(rsps, "%s,%s\n", it->name, it->proxy->name);
     it = it->next;
   }
 }
 
 static void
-get_list(char rsps[], char *listname) {
+get_list(struct evbuffer *rsps, char *listname) {
   struct acl *it = config->acl_h->data;
 
   while (it != NULL) {
@@ -46,12 +43,12 @@ get_list(char rsps[], char *listname) {
     it = it->next;
   }
 
-  sprintf(rsps, "%s", it->data);
+  evbuffer_add_printf(rsps, "%s", it->data);
 }
 
 
 static void
-ret(struct bufferevent *bev, char *rsps) {
+ret(struct bufferevent *bev, struct evbuffer *rsps) {
   struct evbuffer *output = bufferevent_get_output(bev);
   evbuffer_add_printf(output,
 		      "HTTP/1.1 200 OK\r\n"
@@ -59,18 +56,15 @@ ret(struct bufferevent *bev, char *rsps) {
 		      "Access-Control-Allow-Origin: *\r\n"
 		      "Connection: close\r\n"
 		      "Cache-Control: no-cache\r\n"
-		      "Content-Length: %d\r\n\r\n", (int) strlen(rsps));
-
-  evbuffer_add_printf(output, rsps, NULL);
-
-  bufferevent_flush(bev, EV_WRITE, BEV_FLUSH|BEV_NORMAL);
+		      "Content-Length: %d\r\n\r\n", (int) evbuffer_get_length(rsps));
+  
+  evbuffer_remove_buffer(rsps, output, 102400);
 }
 
 void rpc(struct bufferevent *bev, void *ctx, struct evbuffer *buffer) {
 
   conn_t *conn = ctx;
-  char rsps[102400];
-
+  struct evbuffer *rsps = evbuffer_new();
 
   if (strcmp(conn->method, "GET") == 0) {
     // we don't care about the header
@@ -140,13 +134,18 @@ void rpc(struct bufferevent *bev, void *ctx, struct evbuffer *buffer) {
       
 	char *newcont = evhttp_decode_uri(evhttp_find_header(&kvc, "data"));
 	update_list(newcont, listname);
-	strcpy(rsps, "OK");
+	evbuffer_add_printf(rsps, "OK");
 
 	free(newcont);
 
       }
+
+      evbuffer_free(p->cont);
     }
   
   }
   ret(bev, rsps);
+  evbuffer_free(rsps);
+ 
+  free(conn->rpc);
 }
