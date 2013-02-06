@@ -104,7 +104,7 @@ void load_config() {
 
 }
 
-void update_list(char *list, char *listname) {
+void update_list(const char *list, const char *listname) {
 
   FILE *fh = fopen(listname, "w");
   fwrite(list, 1, strlen(list), fh);

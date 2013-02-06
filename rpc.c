@@ -6,8 +6,6 @@
 #include "rpc.h"
 #include "config.h"
 #include "http.h"
-//#include "util.h"
-#include <string.h>
 
 
 struct post {
@@ -132,7 +130,7 @@ void rpc(struct bufferevent *bev, void *ctx, struct evbuffer *buffer) {
 
       evhttp_parse_query_str(evhttp_uri_get_query(uri), &kv);
 
-      unsigned char *cont = evbuffer_pullup(p->cont, p->length);
+      char *cont = (char *) evbuffer_pullup(p->cont, p->length);
 
       if (strcmp(evhttp_uri_get_path(uri), "/updatelist") == 0) {
 	const char *listname = evhttp_find_header(&kv, "list");
