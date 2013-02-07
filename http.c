@@ -18,15 +18,6 @@ read_server(struct bufferevent *bev, void *ctx) {
   char version[10];
   int code;
 
-
-  /*
-  char *buf = malloc(1024);
-  char *line;
-  while ((line = evbuffer_readln(bufferevent_get_output(bev), NULL, EVBUFFER_EOL_ANY)) != NULL)
-    printf("SERVER HEADER: %s\n", line);
-  free(line);
-  */
-
   if (conn->pos == 0) {
     char *buf = malloc(128);
     evbuffer_copyout(bufferevent_get_input(bev), buf, 128);
@@ -38,8 +29,30 @@ read_server(struct bufferevent *bev, void *ctx) {
     conn->pos = 1;
   }
 
-  bufferevent_read_buffer(bev, bufferevent_get_output(bev_client));
+  if (bufferevent_read_buffer(bev, bufferevent_get_output(bev_client))) 
+    fputs("error reading from server", stderr);
 
+}
+
+
+static void
+free_conn(conn_t *conn) {
+
+  if (conn->state) {
+    if (conn->state->cont) 
+      evbuffer_free(conn->state->cont);
+    
+    if (conn->state->header) 
+      evbuffer_free(conn->state->header);  
+
+    free(conn->state);
+  }
+
+  bufferevent_free(conn->be_client);
+  if (conn->be_server) 
+    bufferevent_free(conn->be_server);
+  
+  free(conn);
 }
 
 /* server event */
@@ -48,7 +61,7 @@ static void
 server_event(struct bufferevent *bev, short e, void *ptr) {
   conn_t *conn = ptr;
   if (e & BEV_EVENT_CONNECTED) {
-    //
+    
     conn->pos = 0;
     bufferevent_set_timeouts(bev, &config->timeout, &config->timeout);
     bufferevent_setcb(bev, read_server, NULL, server_event, conn);
@@ -65,83 +78,187 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
 
     }
 
-    if (e & BEV_EVENT_TIMEOUT) ;
-    //      printf("SERVER TIMEOUT");
-    
-    bufferevent_free(conn->be_client);
-    bufferevent_free(bev);
-    free(conn);
+    free_conn(conn);
 
   }
 }
 
-/* connect to server directly. need to take care of both http and https */
+void
+http_ready_cb(void (*callback)(void *ctx), void *ctx) {
+  conn_t *conn = ctx;
+  struct state *s = conn->state; // s for shorthand
+  struct evbuffer *buffer = bufferevent_get_input(conn->be_client);
+  
+  if (s == NULL) {
+    conn->state = s = calloc(sizeof(struct state), 1);
+    s->eor = 0;
+    s->header = evbuffer_new();
+  }
+
+  // header section
+  if (!s->is_cont) {
+    char *line;
+    char header[128], header_v[1024];
+    
+    if (s->eor) {
+      line = evbuffer_readln(buffer, NULL, EVBUFFER_EOL_CRLF);
+
+      sscanf(line, "%s %s %s", conn->method, conn->url, conn->version);
+
+      // Don't store request line(first line) in header.
+      // evbuffer_add_printf(s->header, "%s\r\n", line);
+
+      printf("CC: %s %s\n", conn->method, conn->url);
+      free(line);
+      s->eor = 0;
+    }
+
+    // find content length
+    while ((line = evbuffer_readln(buffer, NULL, EVBUFFER_EOL_CRLF)) != NULL) {
+
+      if (strlen(line) == 0) {   
+	evbuffer_add_printf(s->header, "\r\n");   
+	free(line);
+	s->is_cont = 1;
+	break;
+      }
+
+      evbuffer_add_printf(s->header, "%s\r\n", line);
+ 
+      if (s->length == 0) {
+	sscanf(line, "%s %s", header, header_v);
+
+	if (strcmp(header, "Content-Length:") == 0) {
+	  s->length = atoi(header_v);
+	  printf("length found: %d\n", s->length);
+	}
+      }
+
+      free(line);
+    } // while
+  } // header
+
+  // content section
+  if (s->is_cont) {
+    // simply a header, no content
+    if (s->length == 0) goto end;  
+
+    if (s->cont == NULL) s->cont = evbuffer_new();
+
+    int read = evbuffer_remove_buffer(buffer, s->cont, s->length);
+    s->read += read;
+    printf("read: %d\n", read);
+
+    if (s->read != s->length) return;
+  }
+  else return;
+
+  end:
+  (*callback)(ctx);
+
+  // clean up and get ready for next request
+  s->eor = 1;
+  s->read = 0;
+  s->length = 0;
+  s->is_cont = 0;
+}
+
+static void
+connect_server(char *host, int port, conn_t *conn) {
+
+  conn->be_server = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+
+  bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
+  bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
+
+  if(bufferevent_socket_connect_hostname(conn->be_server, NULL, AF_UNSPEC, host, port) == -1) {
+    perror("DNS failure\n");
+    exit(1);
+  }
+}
+
+static void 
+read_direct_http(void *ctx) {
+  conn_t *conn = ctx;
+
+  // e.g. GET http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html HTTP/1.1
+  if (conn->be_server == NULL) {
+    struct parsed_url *url = simple_parse_url(conn->url);
+
+    connect_server(url->host, url->port, conn);
+  }
+
+  struct evbuffer *output = bufferevent_get_output(conn->be_server);
+
+  char *pos = conn->url + 10;
+  while (pos[0] != '/')
+    pos++;
+
+  evbuffer_add_printf(output, "%s %s %s\r\n", conn->method, pos, conn->version);
+
+  evbuffer_remove_buffer(conn->state->header, output, 2048);
+
+  //char *db = (char *)evbuffer_pullup(output, -1);
+  //printf("%s", db);
+
+  if (conn->state->length) {
+    evbuffer_remove_buffer(conn->state->cont, output, conn->state->length);
+    
+  }
+}
+
+static void 
+read_direct_https(void *ctx) {
+  conn_t *conn = ctx;
+  if (bufferevent_read_buffer(conn->be_client, bufferevent_get_output(conn->be_server)))
+
+  fputs("error reading from client", stderr);
+}
+static void 
+read_direct_https_handshake(void *ctx) {
+  conn_t *conn = ctx;
+
+  // e.g. CONNECT www.wikipedia.org:443 HTTP/1.1
+
+  conn->state = calloc(sizeof(struct state), 1);
+
+  char *url = strdup(conn->url);
+  char *host = strtok(url, ":");
+  int port = atoi(strtok(NULL, ""));
+
+  char *tmp;
+  // we don't really care what headers there are, just find the end of it
+
+  while ((tmp = evbuffer_readln(bufferevent_get_input(conn->be_client), NULL, EVBUFFER_EOL_CRLF )) != NULL) {
+    if (strlen(tmp) == 0) {
+      free(tmp);
+      break;
+    }
+    free(tmp);
+  }
+
+  connect_server(host, port, conn);
+  
+  free(url);
+  evbuffer_add_printf(bufferevent_get_output(conn->be_client), "HTTP/1.1 200 Connection established\r\n\r\n");
+
+}
+
+/* Connect to server directly. Need to take care of both http and https */
 
 static void
 read_client_direct(struct bufferevent *bev, void *ctx) {
   conn_t *conn = ctx;
-  struct bufferevent *bevs;
-  struct parsed_url *purl = NULL;
 
-  char *host, *port, *url = NULL; 
-  int i_port;
-
-  bevs = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
-  conn->be_client = bev;
-  conn->be_server = bevs;
-
-  if (strcmp(conn->method, "CONNECT") == 0) 
-    {
-      // e.g. CONNECT www.wikipedia.org:443 HTTP/1.1
-      url = malloc(strlen(conn->url)+1);
-      strcpy(url, conn->url);
-      host = strtok(url, ":");
-      port = strtok(NULL, "");
-      i_port = atoi(port);
-
-      /*******************************
-********************
-TODO HERE
-********************
-********************/
-      char *tmp;
-      while ((tmp = evbuffer_readln(bufferevent_get_input(bev), NULL, EVBUFFER_EOL_ANY ))!=NULL)free(tmp);
-      //	printf("%s\n", tmp);      
-
-      evbuffer_add_printf(bufferevent_get_output(bev), "HTTP/1.1 200 Connection established\r\n\r\n");
-    }
-  // end of https
-  else 
-    {
-      // e.g. GET http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html HTTP/1.1
-
-      purl = simple_parse_url(conn->url);
-      i_port = purl->port;
-      host = purl->host;
-
-      struct evbuffer *output = bufferevent_get_output(bevs);
-      char *pos = conn->url + 10;
-      while (pos[0] != '/')
-	pos++;
-
-      evbuffer_add_printf(output, "%s %s %s\r\n", conn->method, pos, conn->ver);
-      bufferevent_read_buffer(bev, output);
-
-    }
-
-  bufferevent_setcb(bevs, read_server, NULL, server_event, conn);
-  bufferevent_enable(bevs, EV_READ|EV_WRITE);
-
-  if(bufferevent_socket_connect_hostname(bevs, NULL, AF_UNSPEC, host, i_port) == -1) {
-    perror("DNS failure\n");
-    exit(1);
+  if (strcmp(conn->method, "CONNECT") == 0) {
+    if (conn->be_server)
+      read_direct_https(ctx);
+    else
+      http_ready_cb(read_direct_https_handshake, ctx);
   }
-  if (purl != NULL) {
-    free(purl->url);
-    free(purl->host);
-    free(purl);
+  else {
+    http_ready_cb(read_direct_http, ctx);
   }
-  if (url != NULL) free(url);
 }
 
 static void
@@ -149,15 +266,14 @@ read_client_http_proxy(struct bufferevent *bev, void *ptr) {
   conn_t *conn = ptr;
   struct bufferevent *bevs;
 
-
   bevs = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
 
   conn->be_client = bev;
   conn->be_server = bevs;
 
-  struct evbuffer *output =  bufferevent_get_output(bevs);
+  struct evbuffer *output = bufferevent_get_output(bevs);
 
-  evbuffer_add_printf(output, "%s %s %s\r\n", conn->method, conn->url, conn->ver);
+  evbuffer_add_printf(output, "%s %s %s\r\n", conn->method, conn->url, conn->version);
 
   if (bufferevent_read_buffer(bev, output) == -1) 
     perror("error");
@@ -175,54 +291,56 @@ read_client_http_proxy(struct bufferevent *bev, void *ptr) {
 static void
 read_client(struct bufferevent *bev, void *ctx) {
   conn_t *conn = ctx;
-  //  printf("read event\n");
-  //  fflush(stdout);
 
-  if (conn->be_server != NULL) {
-    //connected, foward client data no matter to proxy or server
-
-    bufferevent_read_buffer(bev, bufferevent_get_output(conn->be_server));
+  if (conn->tos == DIRECT) {
+    read_client_direct(bev, conn);
     return;
   }
 
-  struct evbuffer *buffer = bufferevent_get_input(bev);
+  if (conn->tos == HTTP_PROXY) {
 
-  if (conn->config) {
-    //direct to rpc
-    rpc(bev, ctx, buffer);
+    if (bufferevent_read_buffer(bev, bufferevent_get_output(conn->be_server))) printf("error reading from client\n");
+    return;
+  }
+
+  if (conn->tos == CONFIG) {
+    rpc(ctx);
     return;
   }
 
   /* the first time talk to client
 find out requested url and apply switching rules  */
 
-
   char *line;
   line = evbuffer_readln(bufferevent_get_input(bev), NULL, EVBUFFER_EOL_ANY);
 
-  sscanf(line, "%s %s %s", conn->method, conn->url, conn->ver);
+  sscanf(line, "%s %s %s", conn->method, conn->url, conn->version);
 
+  conn->be_client = bev;
   printf("%s %s\n", conn->method, conn->url);
 
   if (conn->url[0] == '/' ){
-    rpc(bev, ctx, buffer);
-    conn->config = 1;
+    rpc(ctx);
+    conn->tos = CONFIG;
+
     free(line);
     return;
   }
+
+/* Determine the connection method by the first header of a consistent connection. Note that there is a slight chance of mis-choosing here. We just ignore it here for efficiency. */
 
   conn->proxy = match_list(conn->url);
 
   free(line);
 
-  if (conn->proxy != NULL) 
-
+  if (conn->proxy != NULL) {
+    conn->tos = HTTP_PROXY;
     read_client_http_proxy(bev, conn);
-
-  else 
- 
+  }
+  else {
+    conn->tos = DIRECT;
     read_client_direct(bev, conn);
-  
+  }
 }
 
 
@@ -247,12 +365,9 @@ client_event(struct bufferevent *bev, short e, void *ptr) {
     fin = 1;
   }
   
-  //  printf("Close from client\n");
   if (fin) {
     // close connection
-    if (conn->be_client != NULL) bufferevent_free(conn->be_client);
-    if (conn->be_server != NULL) bufferevent_free(conn->be_server);
-    free(conn);
+    free_conn(conn);
   }
 }
 

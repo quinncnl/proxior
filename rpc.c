@@ -8,11 +8,6 @@
 #include "http.h"
 
 
-struct post {
-  int length, read;
-  int is_cont;
-  struct evbuffer *cont;
-};
 
 static void 
 get_proxies(struct evbuffer *rsps) {
@@ -24,7 +19,7 @@ get_proxies(struct evbuffer *rsps) {
   }
 }
 
-static void 
+static void
 get_lists(struct evbuffer *rsps) {
   struct acl *it = config->acl_h->data;
   
@@ -46,7 +41,6 @@ get_list(struct evbuffer *rsps, char *listname) {
   evbuffer_add_printf(rsps, "%s", it->data);
 }
 
-
 static void
 ret(struct bufferevent *bev, struct evbuffer *rsps) {
   struct evbuffer *output = bufferevent_get_output(bev);
@@ -61,14 +55,15 @@ ret(struct bufferevent *bev, struct evbuffer *rsps) {
   evbuffer_remove_buffer(rsps, output, 102400);
 }
 
-void rpc(struct bufferevent *bev, void *ctx, struct evbuffer *buffer) {
-
+static void
+handle_request(void *ctx) {
   conn_t *conn = ctx;
   struct evbuffer *rsps = evbuffer_new();
+  struct state *s = conn->state;
 
   if (strcmp(conn->method, "GET") == 0) {
     // we don't care about the header
-    evbuffer_drain(buffer, evbuffer_get_length(buffer));
+    evbuffer_drain(s->header, evbuffer_get_length(s->header));
   
     if (strcmp(conn->url, "/getproxies") == 0) 
       get_proxies(rsps);
@@ -79,73 +74,38 @@ void rpc(struct bufferevent *bev, void *ctx, struct evbuffer *buffer) {
 
   }
   else if (strcmp(conn->method, "POST") == 0) {
-    struct post *p = conn->rpc;
-    if (p == NULL) 
-      conn->rpc = p = calloc(sizeof(struct post), 1);
-    
 
-    if (!p->is_cont) {
-      char *line;
-      char header[200], header_v[200];
-      int size;
-   
-      while ((line = evbuffer_readln(buffer, NULL, EVBUFFER_EOL_CRLF)) != NULL) {
-	sscanf(line, "%s %s", header, header_v);
-	free(line);
-	if (strcmp(header, "Content-Length:") == 0) {
-	  size = atoi(header_v);
-	  printf("size: %d\n", size);
-	  p->length = size;
-	  break;
-	}
-      }
-    
-      while ((line = evbuffer_readln(buffer, NULL, EVBUFFER_EOL_CRLF)) != NULL) {
-	if (strlen(line) == 0) {
-	  p->is_cont = 1;
-	  free(line);
-	  break;
-	}
-	free(line);
-      }
-    }
+    struct evkeyvalq kv;
+    struct evhttp_uri *uri = evhttp_uri_parse_with_flags(conn->url, 0);
 
-    if (p->is_cont) {
-      if (p->cont == NULL) p->cont = evbuffer_new();
+    evhttp_parse_query_str(evhttp_uri_get_query(uri), &kv);
 
-      int read = evbuffer_remove_buffer(buffer, p->cont, p->length);
-      p->read += read;
-      printf("read: %d\n", read);
-    }
+    char *cont = (char *) evbuffer_pullup(s->cont, s->length);
 
-    if (p->read == p->length) {
-      struct evkeyvalq kv;
-      struct evhttp_uri *uri = evhttp_uri_parse_with_flags(conn->url, 0);
+    if (strcmp(evhttp_uri_get_path(uri), "/updatelist") == 0) {
+      const char *listname = evhttp_find_header(&kv, "list");
 
-      evhttp_parse_query_str(evhttp_uri_get_query(uri), &kv);
-
-      char *cont = (char *) evbuffer_pullup(p->cont, p->length);
-
-      if (strcmp(evhttp_uri_get_path(uri), "/updatelist") == 0) {
-	const char *listname = evhttp_find_header(&kv, "list");
-
-	struct evkeyvalq kvc;
-	evhttp_parse_query_str(cont, &kvc);
+      struct evkeyvalq kvc;
+      evhttp_parse_query_str(cont, &kvc);
       
-	char *newcont = evhttp_decode_uri(evhttp_find_header(&kvc, "data"));
-	update_list(newcont, listname);
-	evbuffer_add_printf(rsps, "OK");
+      char *newcont = evhttp_decode_uri(evhttp_find_header(&kvc, "data"));
+      update_list(newcont, listname);
+      evbuffer_add_printf(rsps, "OK");
 
-	free(newcont);
-
-      }
-
-      evbuffer_free(p->cont);
+      free(newcont);
     }
-  
+
+    evhttp_uri_free(uri);
   }
-  ret(bev, rsps);
+  
+  ret(conn->be_client, rsps);
   evbuffer_free(rsps);
- 
-  free(conn->rpc);
+
+}
+
+
+void rpc(void *ctx) {
+
+  http_ready_cb(handle_request, ctx);
+
 }

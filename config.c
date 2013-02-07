@@ -29,7 +29,6 @@ find_proxy(char *proxy_name) {
   if (strcmp(proxy_name, "direct") == 0)
     return NULL;
 
-  perror("proxy not found, use direct\n");
   return NULL;
 }
 

@@ -12,15 +12,40 @@ typedef struct conn
   struct bufferevent *be_client, *be_server;
   char url[MAX_URL_LEN];
   char method[10];
-  char ver[10];
+  char version[10];
+
+  // type of service
+  enum {
+    DIRECT = 0x01, HTTP_PROXY = 0x02, CONFIG = 0x03
+  } tos;
+
+  /* proxy to use, NULL for direct */
   struct proxy_t *proxy;
   int pos;
-  int config;
-  void *rpc;
+  
+  /*  track current http state */
+  struct state *state; 
 } conn_t;
+
+
+struct state {
+  /* for content section */
+  int length, read; 
+  int is_cont;
+  
+  /* end of request header */
+  int eor;
+
+  struct evbuffer *header;
+  struct evbuffer *cont;
+};
+
 
 #define CONNECT_DIRECT 1
 #define CONNECT_HTTP_PROXY 2
+
+void
+http_ready_cb(void (*callback)(void *ctx), void *ctx);
 
 void start();
 
