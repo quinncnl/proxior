@@ -49,6 +49,33 @@ get_lists(struct evbuffer *rsps) {
 }
 
 static void
+get_log(struct evbuffer *rsps) {
+  char *log = get_file_path("log");
+  FILE *fh = fopen(log, "r");
+
+  if (fh == NULL) return;
+
+  fseek(fh, 0L, SEEK_END);
+  long s = ftell(fh);
+  char *buffer;
+  rewind(fh);
+  buffer = malloc(s);
+  if (buffer != NULL )
+    fread(buffer, s, 1, fh);
+  
+  evbuffer_add(rsps, buffer, s);
+  free(buffer);
+}
+
+static void
+rm_log(struct evbuffer *rsps) {
+  char *log = get_file_path("log");
+  remove(log);
+
+  evbuffer_add_printf(rsps, "OK");
+}
+
+static void
 get_list(struct evbuffer *rsps, char *listname) {
   struct acl *it = config->acl_h->data;
 
@@ -90,6 +117,8 @@ handle_request(void *ctx) {
       get_lists(rsps);
     else if (strncmp(conn->url, "/getlist?", 9) == 0)
       get_list(rsps, conn->url+9);
+    else if (strcmp(conn->url, "/getlog") == 0) 
+      get_log(rsps);
 
   }
   else if (strcmp(conn->method, "POST") == 0) {
@@ -99,11 +128,16 @@ handle_request(void *ctx) {
 
     evhttp_parse_query_str(evhttp_uri_get_query(uri), &kv);
 
-    char *cont = malloc(s->length+1);
-    evbuffer_remove(s->cont, cont, s->length);
-    cont[s->length] = 0;
+    char *cont;
+    if (s->length) {
+      cont = malloc(s->length+1);
+      evbuffer_remove(s->cont, cont, s->length);
+      cont[s->length] = 0;
+    }
 
-    if (strcmp(evhttp_uri_get_path(uri), "/updatelist") == 0) {
+    const char *path = evhttp_uri_get_path(uri);
+
+    if (strcmp(path, "/updatelist") == 0) {
       const char *listname = evhttp_find_header(&kv, "list");
 
       struct evkeyvalq kvc;
@@ -114,6 +148,9 @@ handle_request(void *ctx) {
       evbuffer_add_printf(rsps, "OK");
 
       free(newcont);
+    }
+    else if (strcmp(path, "/rmlog") == 0) {
+      rm_log(rsps);
     }
 
     evhttp_uri_free(uri);

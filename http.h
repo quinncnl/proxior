@@ -21,7 +21,9 @@ typedef struct conn
 
   /* proxy to use, NULL for direct */
   struct proxy_t *proxy;
-  int pos;
+
+  /* response headline */
+  short headline;
   
   /*  track current http state */
   struct state *state; 

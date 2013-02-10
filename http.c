@@ -38,19 +38,18 @@ read_server(struct bufferevent *bev, void *ctx) {
   char version[10];
   int code;
 
-  if (conn->pos == 0) {
-    char *buf = malloc(128);
-    evbuffer_copyout(bufferevent_get_input(bev), buf, 128);
+  if (conn->headline) {
+    char buf[64];
+    evbuffer_copyout(bufferevent_get_input(bev), buf, 64);
     sscanf(buf, "%s %d", version, &code);
-    if (code == 502) {
-      log_reset(conn->url);
-    }
-    free(buf);
-    conn->pos = 1;
+    if (code == 502)
+      log_error(502, "Bad gateway.", conn->url, conn->proxy);
+
+    conn->headline = 0;
   }
 
   if (bufferevent_read_buffer(bev, bufferevent_get_output(bev_client))) 
-    fputs("error reading from server", stderr);
+    fputs("Error reading from server.", stderr);
 
 }
 
@@ -82,19 +81,19 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
   conn_t *conn = ptr;
   if (e & BEV_EVENT_CONNECTED) {
     
-    conn->pos = 0;
+    conn->headline = 1;
     bufferevent_set_timeouts(bev, &config->timeout, &config->timeout);
     bufferevent_setcb(bev, read_server, NULL, server_event, conn);
-    if (bufferevent_enable(bev, EV_READ|EV_WRITE) == -1) perror("S");
+    bufferevent_enable(bev, EV_READ|EV_WRITE);
     
   }
   else if (e & (BEV_EVENT_ERROR|BEV_EVENT_EOF|BEV_EVENT_TIMEOUT)) {
 
     if (e & BEV_EVENT_ERROR) {
 
-      int err = evutil_socket_geterror(bufferevent_getfd(conn->be_server)); 
-      printf("error code: %d, string: %s\n", err, evutil_socket_error_to_string(err)); 
-      log_reset(conn->url);
+      int code = evutil_socket_geterror(bufferevent_getfd(conn->be_server)); 
+
+      log_error(code,  evutil_socket_error_to_string(code), conn->url, conn->proxy);
 
     }
 

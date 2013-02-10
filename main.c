@@ -12,6 +12,7 @@ static void
 show_help() {
   char *help = 
     "-d    Run as a daemon.\n"
+    "-p    Set configuration path.\n"
     "\n";
   fputs(help, stderr);
 }

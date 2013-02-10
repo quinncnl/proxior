@@ -56,9 +56,8 @@ static void
 add_acl(struct acllist *al, char *proxy_name, char *list) {
   struct acl *acl = malloc(sizeof(struct acl));
 
-  char *path = malloc(64);
-  strcpy(path, config->path);
-  strcat(path, list);
+  char *path = get_file_path(list);
+
   FILE *fh = fopen(path, "r");
   if (fh == NULL) {
     perror("Unable to open list file.");
@@ -74,7 +73,6 @@ add_acl(struct acllist *al, char *proxy_name, char *list) {
     fread(buffer, s, 1, fh);
 
   fclose(fh);
-  free(path);
 
   acl->name = strdup(list);
   acl->proxy = find_proxy(proxy_name);
@@ -108,25 +106,24 @@ set_listen(char *word) {
 void load_config(char path[]) {
   char buffer[1024];
   char word1[20], word2[20], word3[20];
-  char *config_path = malloc(64);
 
-  strcpy(config_path, path);
-  strcat(config_path, "proxior.conf");
+  config = malloc(sizeof(conf));
+
+  config->path = path;
+
+  char *config_path = get_file_path("proxior.conf");
   FILE *fd = fopen(config_path, "r");
+
   if (fd == NULL) {
     perror("Unable to open configuration");
     exit(1);
   }
-  free(config_path);
 
   struct proxylist *plist = malloc(sizeof(struct proxylist));
   struct acllist *alist = malloc(sizeof(struct acllist));
   plist->data = NULL;
   alist->data = NULL;
 
-  config = malloc(sizeof(conf));
-
-  config->path = path;
   config->proxy_h = plist;
   config->acl_h = alist;
 
@@ -173,4 +170,11 @@ void update_list(const char *list, const char *listname) {
     it->data = malloc(newsize);
   }
   strcpy(it->data, list);
+}
+
+char *get_file_path(char *filename) {
+  static char path[64];
+  strcpy(path, config->path);
+  strcat(path, filename);
+  return path;
 }

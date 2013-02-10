@@ -21,27 +21,30 @@
 #include <time.h>
 #include "logging.h"
 
-FILE *fd;
-
 void open_log() {
-  fd = fopen ("log", "a");
+  char *log = get_file_path("log");
+  config->logfd = fopen (log, "a");
 }
 
 void close_log() {
-  fclose(fd);
+  fclose(config->logfd);
 }
 
 /* log  */
 
-void log_reset(char *url) {
+void log_error(int code, char *string, char *url, struct proxy_t *proxy) {
+
   time_t rawtime;
   time ( &rawtime );
+
+  // Cannot be freed.
   char *timestr = ctime (&rawtime);
   timestr[24] = 0;
-  fputs(timestr, fd);
-  fputs(" 502 ", fd);
-  fputs(url, fd);
-  fputc('\n', fd);
 
-  fflush(fd);
+  if (proxy == NULL) 
+    fprintf(config->logfd, "%s [%s] accessing %s via NO PROXY.\n", timestr, string, url);
+  else
+    fprintf(config->logfd, "%s [%s] accessing %s via %s(%s:%d).\n", timestr, string, url, proxy->name, proxy->host, proxy->port);
+
+  fflush(config->logfd);
 }

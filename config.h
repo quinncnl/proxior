@@ -38,6 +38,7 @@ typedef struct {
   short listen_port;
   int foreground;
   char *path;
+  FILE *logfd;
 } conf;
 
 conf *config;
@@ -47,6 +48,8 @@ void load_config(char *);
 void save_config();
 
 void update_list(const char *list, const char *listname) ;
+
+char *get_file_path(char *);
 
 //void free_config();
 
