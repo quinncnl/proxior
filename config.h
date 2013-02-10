@@ -34,11 +34,15 @@ typedef struct {
   struct acllist *acl_h;
   struct proxy_t *default_proxy;
   struct timeval timeout;
+  char *listen_addr;
+  short listen_port;
+  int foreground;
+  char *path;
 } conf;
 
 conf *config;
 
-void load_config();
+void load_config(char *);
 
 void save_config();
 

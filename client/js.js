@@ -27,12 +27,13 @@ $.ajax({
 });
 
 function dosubmit() {
+
     $.ajax({
 	type: "POST",
 	url: "http://192.168.0.6:9999/updatelist?list="+curlist,
-	data: {data: $("#data").val()},
+	data: {data: encodeURIComponent($("#data").val())},
 	success: function(rs) {
-
+	    alert(rs);
 	}
     });
 }

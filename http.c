@@ -1,3 +1,22 @@
+/*
+
+  Copyright (c) 2013 by Clear Tsai
+
+  Proxior is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  any later version.
+
+  Proxior is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with Foobar.  If not, see <http://www.gnu.org/licenses/>.
+
+*/
+
 #include "http.h"
 #include "match.h"
 #include "util.h"
@@ -5,6 +24,7 @@
 #include <errno.h>
 #include <event2/util.h>
 #include <stdarg.h>
+#include <arpa/inet.h>
 
 /* Connect to server and proxy */
 
@@ -72,8 +92,8 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
 
     if (e & BEV_EVENT_ERROR) {
 
-      //int err = evutil_socket_geterror(bufferevent_getfd(conn->be_server)); 
-      //printf("error code: %d, string: %s\n", err, evutil_socket_error_to_string(err)); 
+      int err = evutil_socket_geterror(bufferevent_getfd(conn->be_server)); 
+      printf("error code: %d, string: %s\n", err, evutil_socket_error_to_string(err)); 
       log_reset(conn->url);
 
     }
@@ -186,6 +206,7 @@ read_direct_http(void *ctx) {
     struct parsed_url *url = simple_parse_url(conn->url);
 
     connect_server(url->host, url->port, conn);
+    free_parsed_url(url);
   }
 
   struct evbuffer *output = bufferevent_get_output(conn->be_server);
@@ -316,7 +337,6 @@ find out requested url and apply switching rules  */
 
   sscanf(line, "%s %s %s", conn->method, conn->url, conn->version);
 
-  conn->be_client = bev;
   printf("%s %s\n", conn->method, conn->url);
 
   if (conn->url[0] == '/' ){
@@ -350,7 +370,9 @@ client_event(struct bufferevent *bev, short e, void *ptr) {
   int fin = 0;
 
   if (e & BEV_EVENT_CONNECTED) {
+
     bufferevent_set_timeouts(bev, &config->timeout, &config->timeout);
+
   }
   if (e & BEV_EVENT_ERROR){
     perror("Client Error\n");
@@ -381,6 +403,8 @@ accept_conn_cb(struct evconnlistener *listener,
 
   conn_t *conn = calloc(sizeof(conn_t), 1);
 
+  conn->be_client = bev;
+  
   bufferevent_setcb(bev, read_client, NULL, client_event, conn);
   bufferevent_enable(bev, EV_READ|EV_WRITE);
 }
@@ -397,8 +421,8 @@ start() {
 
   memset(&sin, 0, sizeof(sin));
   sin.sin_family = AF_INET;
-  sin.sin_addr.s_addr = htonl(0);
-  sin.sin_port = htons(9999);
+  sin.sin_addr.s_addr = inet_addr(config->listen_addr);
+  sin.sin_port = htons(config->listen_port);
 
   listener = evconnlistener_new_bind(base, accept_conn_cb, NULL,
 				     LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, -1,

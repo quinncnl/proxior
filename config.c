@@ -1,9 +1,29 @@
+/*
+
+  Copyright (c) 2013 by Clear Tsai
+
+  Proxior is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  any later version.
+
+  Proxior is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with Foobar.  If not, see <http://www.gnu.org/licenses/>.
+
+*/
+
+
 #include "config.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <assert.h>
-
+#include <arpa/inet.h>
 
 static void
 add_proxy(struct proxylist *pl, char *name, char *ap) {
@@ -36,8 +56,14 @@ static void
 add_acl(struct acllist *al, char *proxy_name, char *list) {
   struct acl *acl = malloc(sizeof(struct acl));
 
-  FILE *fh = fopen(list, "r");
-  //assume ( fh != NULL );
+  char *path = malloc(64);
+  strcpy(path, config->path);
+  strcat(path, list);
+  FILE *fh = fopen(path, "r");
+  if (fh == NULL) {
+    perror("Unable to open list file.");
+    exit(1);
+  }
 
   fseek(fh, 0L, SEEK_END);
   long s = ftell(fh);
@@ -46,7 +72,9 @@ add_acl(struct acllist *al, char *proxy_name, char *list) {
   buffer = malloc(s);
   if (buffer != NULL )
     fread(buffer, s, 1, fh);
+
   fclose(fh);
+  free(path);
 
   acl->name = strdup(list);
   acl->proxy = find_proxy(proxy_name);
@@ -67,12 +95,29 @@ set_timeout(char *time) {
   config->timeout.tv_usec = 0;
 }
 
+static void
+set_listen(char *word) {
+  config->listen_addr = strdup(strtok(word, ":"));
+
+  sscanf(strtok(NULL, ""), "%hd", &config->listen_port);
+
+}
+
 /* Load and resolve configuration */
 
-void load_config() {
+void load_config(char path[]) {
   char buffer[1024];
   char word1[20], word2[20], word3[20];
-  FILE *fd = fopen("proxyrouter.conf", "r");
+  char *config_path = malloc(64);
+
+  strcpy(config_path, path);
+  strcat(config_path, "proxior.conf");
+  FILE *fd = fopen(config_path, "r");
+  if (fd == NULL) {
+    perror("Unable to open configuration");
+    exit(1);
+  }
+  free(config_path);
 
   struct proxylist *plist = malloc(sizeof(struct proxylist));
   struct acllist *alist = malloc(sizeof(struct acllist));
@@ -80,6 +125,8 @@ void load_config() {
   alist->data = NULL;
 
   config = malloc(sizeof(conf));
+
+  config->path = path;
   config->proxy_h = plist;
   config->acl_h = alist;
 
@@ -98,6 +145,8 @@ void load_config() {
     }
     else if (strcmp(word1, "timeout") == 0) 
       set_timeout(word2);
+    else if (strcmp(word1, "listen") == 0)
+      set_listen(word2);
   }
   fclose(fd);
 

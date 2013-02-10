@@ -1,3 +1,22 @@
+/*
+
+  Copyright (c) 2013 by Clear Tsai
+
+  Proxior is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  any later version.
+
+  Proxior is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with Foobar.  If not, see <http://www.gnu.org/licenses/>.
+
+*/
+
 #include <event2/http.h>
 #include <event2/event.h>
 #include <event.h>
@@ -80,7 +99,9 @@ handle_request(void *ctx) {
 
     evhttp_parse_query_str(evhttp_uri_get_query(uri), &kv);
 
-    char *cont = (char *) evbuffer_pullup(s->cont, s->length);
+    char *cont = malloc(s->length+1);
+    evbuffer_remove(s->cont, cont, s->length);
+    cont[s->length] = 0;
 
     if (strcmp(evhttp_uri_get_path(uri), "/updatelist") == 0) {
       const char *listname = evhttp_find_header(&kv, "list");
