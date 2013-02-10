@@ -1,7 +1,19 @@
-proxyrouter
+Proxior
 ===========
-As its name indicates, proxyrouter is a http layer router. Its concept quite resembles the chrome plugins SwitchySharp. 
+Proxior can be seen as an HTTP layer router. Its concept quite resembles the chrome plugins SwitchySharp and PAC. 
 
-Suppose we have 2 HTTP proxies, namely squid on myserver:3128 and polipo on myserver:8123. We want sites that matched list1 be visited via squid and sites matched list 2 visited via polipo. If no list is matched, then access it directly.
+It supports HTTP proxy and direct link, and will support socks5 proxy sometime.
 
-It does not support authentication. If you really need it, configure a squid as its child and use squid's authentication mechnism.
+Proxior does not support authentication at this time. If you really need it, configure a squid proxy and set Proxior to be its parent proxy.
+
+Compilation
+===========
+libevent is required.
+
+make && sudo make install
+
+Tested with Ubuntu and Mac OSX.
+
+Configuration
+===========
+The config and access lists are located at /etc/proxior/. Go there to see details.
