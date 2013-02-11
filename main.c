@@ -63,9 +63,7 @@ int main(int argc, char *argv[])
   signal(SIGPIPE, SIG_IGN); 
 
   load_config(path);
-  open_log();
   start();
-  close_log();
 
   return 0;
 }

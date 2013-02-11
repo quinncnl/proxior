@@ -4,9 +4,10 @@
 <head>
 <title>Proxior Options</title>
 <link href="css/south-street/jquery-ui-1.10.0.custom.css" rel="stylesheet">
-<script src="js/jquery-1.9.0.js"></script>
-<script src="js/jquery-ui-1.10.0.custom.js"></script>
-<script src="js.js"></script>
+<script src="js/jquery-1.9.0.min.js"></script>
+<script src="js/jquery-ui-1.10.0.custom.min.js"></script>
+<script src="js/jquery.cookie.js"></script>
+<script src="js/js.js"></script>
 
 <style>
 	body{
@@ -29,7 +30,8 @@ font: 28px "Trebuchet MS", sans-serif;
 	<ul>
 		<li><a href="#tabs-1">List</a></li>
 		<li><a href="#tabs-2">Log</a></li>
-		<li><a href="#tabs-3">About</a></li>
+		<li><a href="#tabs-3">Setting</a></li>
+		<li><a href="#tabs-4">About</a></li>
 	</ul>
 	<div id="tabs-1"><form id="edform">
 <strong>List Name:</strong><br />
@@ -45,6 +47,13 @@ font: 28px "Trebuchet MS", sans-serif;
 <input type="button" value="Clear log" onclick="dormlog()" />
 </div>
 	<div id="tabs-3">
+	  Target Proxy:<br />
+	  <input id='target_proxy' type="text" />
+	  <br />
+	  <input type=button onclick="douptarget()" value="Update" />
+	</div>
+
+	<div id="tabs-4">
 <center><h1>Proxior</h1>
 	 version: 0.1<br />
 	  Project Homepage: <br /><a

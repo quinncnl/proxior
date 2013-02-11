@@ -63,6 +63,7 @@ get_log(struct evbuffer *rsps) {
   if (buffer != NULL )
     fread(buffer, s, 1, fh);
   
+  fclose(fh);
   evbuffer_add(rsps, buffer, s);
   free(buffer);
 }

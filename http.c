@@ -93,6 +93,14 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
       int code = evutil_socket_geterror(bufferevent_getfd(conn->be_server)); 
 
       log_error(code,  evutil_socket_error_to_string(code), conn->url, conn->proxy);
+      
+      evbuffer_add_printf(bufferevent_get_output(conn->be_client),
+			  "HTTP/1.1 502 Bad Gateway\r\n"
+			  "Content-Length: 16\r\n"
+			  "Connection: close\r\n\r\n"
+			  "Connection Reset."
+			  );
+      return;
 
     }
 
@@ -126,7 +134,7 @@ http_ready_cb(void (*callback)(void *ctx), void *ctx) {
       // Don't store request line(first line) in header.
       // evbuffer_add_printf(s->header, "%s\r\n", line);
 
-      printf("CC: %s %s\n", conn->method, conn->url);
+      printf("%s %s\n", conn->method, conn->url);
       free(line);
       s->eor = 0;
     }
@@ -148,7 +156,7 @@ http_ready_cb(void (*callback)(void *ctx), void *ctx) {
 
 	if (strcmp(header, "Content-Length:") == 0) {
 	  s->length = atoi(header_v);
-	  printf("length found: %d\n", s->length);
+	  //printf("length found: %d\n", s->length);
 	}
       }
 
@@ -165,7 +173,7 @@ http_ready_cb(void (*callback)(void *ctx), void *ctx) {
 
     int read = evbuffer_remove_buffer(buffer, s->cont, s->length);
     s->read += read;
-    printf("read: %d\n", read);
+    //printf("read: %d\n", read);
 
     if (s->read != s->length) return;
   }
@@ -217,9 +225,6 @@ read_direct_http(void *ctx) {
 
   evbuffer_remove_buffer(conn->state->header, output, 2048);
 
-  //char *db = (char *)evbuffer_pullup(output, -1);
-  //printf("%s", db);
-
   if (conn->state->length) {
     evbuffer_remove_buffer(conn->state->cont, output, conn->state->length);
     
@@ -233,6 +238,7 @@ read_direct_https(void *ctx) {
 
   fputs("error reading from client", stderr);
 }
+
 static void 
 read_direct_https_handshake(void *ctx) {
   conn_t *conn = ctx;
@@ -318,7 +324,9 @@ read_client(struct bufferevent *bev, void *ctx) {
 
   if (conn->tos == HTTP_PROXY) {
 
-    if (bufferevent_read_buffer(bev, bufferevent_get_output(conn->be_server))) printf("error reading from client\n");
+    if (bufferevent_read_buffer(bev, bufferevent_get_output(conn->be_server)))
+      printf("error reading from client\n");
+
     return;
   }
 
@@ -337,19 +345,18 @@ find out requested url and apply switching rules  */
 
   printf("%s %s\n", conn->method, conn->url);
 
+  free(line);
+
   if (conn->url[0] == '/' ){
     rpc(ctx);
     conn->tos = CONFIG;
-
-    free(line);
+    
     return;
   }
 
 /* Determine the connection method by the first header of a consistent connection. Note that there is a slight chance of mis-choosing here. We just ignore it here for efficiency. */
 
   conn->proxy = match_list(conn->url);
-
-  free(line);
 
   if (conn->proxy != NULL) {
     conn->tos = HTTP_PROXY;
@@ -367,28 +374,15 @@ client_event(struct bufferevent *bev, short e, void *ptr) {
   conn_t *conn = ptr;
   int fin = 0;
 
-  if (e & BEV_EVENT_CONNECTED) {
-
+  if (e & BEV_EVENT_CONNECTED) 
     bufferevent_set_timeouts(bev, &config->timeout, &config->timeout);
 
-  }
-  if (e & BEV_EVENT_ERROR){
-    perror("Client Error\n");
-    fin = 1;
-  }
-  if (e & BEV_EVENT_EOF) {
-    //printf("Client EOF\n");
-    fin = 1;
-  }
-  if (e & BEV_EVENT_TIMEOUT) {
-    printf("CLIENT TIMEOUT \n");
-    fin = 1;
-  }
-  
-  if (fin) {
-    // close connection
-    free_conn(conn);
-  }
+
+  if (e & (BEV_EVENT_ERROR|BEV_EVENT_EOF|BEV_EVENT_TIMEOUT)){
+
+      // close connection
+      free_conn(conn);
+    }
 }
 
 /* accept a connection */
