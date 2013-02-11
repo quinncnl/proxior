@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+<title>Proxior Options</title>
+<link href="css/south-street/jquery-ui-1.10.0.custom.css" rel="stylesheet">
+<script src="js/jquery-1.9.0.min.js"></script>
+<script src="js/jquery-ui-1.10.0.custom.min.js"></script>
+<script src="js/jquery.cookie.js"></script>
+<script src="js/js.js"></script>
+
+<style>
+	body{
+		font: 62.5% "Trebuchet MS", sans-serif;
+		margin: 50px;
+}
+.fakewindowcontain .ui-widget-overlay {
+		position: absolute;
+	}
+.title {
+font: 28px "Trebuchet MS", sans-serif;
+</style>
+
+</head>
+
+<body>
+<!-- Tabs -->
+<h1 class="title">Proxior Options</h1>
+<div id="tabs">
+	<ul>
+		<li><a href="#tabs-1">List</a></li>
+		<li><a href="#tabs-2">Log</a></li>
+		<li><a href="#tabs-3">Setting</a></li>
+		<li><a href="#tabs-4">About</a></li>
+	</ul>
+	<div id="tabs-1"><form id="edform">
+<strong>List Name:</strong><br />
+<select style="width:100px" name="listname" id="listname" onchange='getlist(this.value)'></select><br />
+
+<strong>List Content:</strong><br />
+<textarea name="S" cols="50" rows="40" id="data"></textarea><br />
+<input type="button" value="Update" onclick="dosubmit()" />
+</form>
+</div>
+<div id="tabs-2"><textarea style="width:99%" id="log" cols="50"
+  rows="40" id="data"></textarea><br />
+<input type="button" value="Clear log" onclick="dormlog()" />
+</div>
+	<div id="tabs-3">
+	  Target Proxy:<br />
+	  <input id='target_proxy' type="text" />
+	  <br />
+	  <input type=button onclick="douptarget()" value="Update" />
+	</div>
+
+	<div id="tabs-4">
+<center><h1>Proxior</h1>
+	 version: 0.1<br />
+	  Project Homepage: <br /><a
+	  href='http://strongwillow.github.com/proxior/'>http://strongwillow.github.com/proxior/</a><br/>
+	  Developed by ClearTsai
+	  </center>
+	</div>
+</div>
+
+
+
+</body>
+
+</html>
