@@ -65,7 +65,7 @@ $(function() {
 });
 
 function douptarget() {
-    $.cookie('the_cookie', 'target', { expires: 7 });
+    $.cookie('target',  $("#target_proxy").val(), { expires: 7 });
 }
 
 function dosubmit() {
