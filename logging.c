@@ -42,9 +42,9 @@ void log_error(int code, char *string, char *url, struct proxy_t *proxy) {
   timestr[24] = 0;
 
   if (proxy == NULL) 
-    fprintf(config->logfd, "%s [%s] accessing %s via NO PROXY.\n", timestr, string, url);
+    fprintf(config->logfd, "%s [%s] via DIRECT LINK\n %s\n", timestr, string, url);
   else
-    fprintf(config->logfd, "%s [%s] accessing %s via %s(%s:%d).\n", timestr, string, url, proxy->name, proxy->host, proxy->port);
+    fprintf(config->logfd, "%s [%s] via %s(%s:%d)\n%s\n", timestr, string, proxy->name, proxy->host, proxy->port, url);
 
   fflush(config->logfd);
 }

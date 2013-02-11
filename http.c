@@ -17,6 +17,8 @@
 
 */
 
+/* Connect to server and proxy */
+
 #include "http.h"
 #include "match.h"
 #include "util.h"
@@ -25,9 +27,6 @@
 #include <event2/util.h>
 #include <stdarg.h>
 #include <arpa/inet.h>
-
-/* Connect to server and proxy */
-
 
 /* read data from server to client */
 
