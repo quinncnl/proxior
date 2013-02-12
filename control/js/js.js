@@ -66,6 +66,7 @@ $(function() {
 
 function douptarget() {
     $.cookie('target',  $("#target_proxy").val(), { expires: 7 });
+    target = $("#target_proxy").val();
 }
 
 function dosubmit() {
