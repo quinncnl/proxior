@@ -25,6 +25,7 @@
 #include "rpc.h"
 #include <errno.h>
 #include <event2/util.h>
+#include <event2/event.h>
 #include <stdarg.h>
 #include <arpa/inet.h>
 
@@ -124,7 +125,7 @@ http_ready_cb(void (*callback)(void *ctx), void *ctx) {
   // header section
   if (!s->is_cont) {
     char *line;
-    char header[128], header_v[1024];
+    char header[64], header_v[2500];
     
     if (s->eor) {
       line = evbuffer_readln(buffer, NULL, EVBUFFER_EOL_CRLF);
@@ -372,11 +373,9 @@ find out requested url and apply switching rules  */
 static void 
 client_event(struct bufferevent *bev, short e, void *ptr) {
   conn_t *conn = ptr;
-  int fin = 0;
 
   if (e & BEV_EVENT_CONNECTED) 
     bufferevent_set_timeouts(bev, &config->timeout, &config->timeout);
-
 
   if (e & (BEV_EVENT_ERROR|BEV_EVENT_EOF|BEV_EVENT_TIMEOUT)){
 
@@ -384,6 +383,12 @@ client_event(struct bufferevent *bev, short e, void *ptr) {
       free_conn(conn);
     }
 }
+
+/* void signal_cb(evutil_socket_t fd, short what, void *arg) */
+/* { */
+/*     printf("signal\n"); */
+
+/* } */
 
 /* accept a connection */
 
@@ -397,6 +402,9 @@ accept_conn_cb(struct evconnlistener *listener,
 
   conn->be_client = bev;
   
+  //event_new(base, fd, EV_SIGNAL|EV_PERSIST, signal_cb,
+  //         (char*)"Reading event");
+
   bufferevent_setcb(bev, read_client, NULL, client_event, conn);
   bufferevent_enable(bev, EV_READ|EV_WRITE);
 }

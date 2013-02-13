@@ -26,7 +26,7 @@ static void
 readline(char *buf, char *list, int *pos, int size) {
   /* a list may be like this:
    *
-   * facebook.com\r\nhttp://media-cache-*.pinterest.com/\r\n*
+   * facebook.com\nhttp://media-cache-*.pinterest.com/\r\n*
    *
    */
 
@@ -55,9 +55,9 @@ match_list(char *url) {
 
   while (node != NULL) {
     pos = 0;
-    while (1) {
       
-      size = strlen(node->data);
+    size = strlen(node->data);
+    while (1) {
 
       readline(buf, node->data, &pos, size);
 
@@ -72,10 +72,6 @@ match_list(char *url) {
     node = node->next;
   }
 
-
-#ifdef DEBUG
-  printf("Not Matched\n");
-#endif
   return config->default_proxy;
 }
 

@@ -44,11 +44,9 @@ void log_error(int code, char *string, char *url, struct proxy_t *proxy) {
   open_log();
 
   if (proxy == NULL) 
-    fprintf(config->logfd, "%s [%s] via DIRECT LINK\n %s\n", timestr, string, url);
+    fprintf(config->logfd, "%s [%s] via DIRECT CONNECTION\n%s\n", timestr, string, url);
   else
     fprintf(config->logfd, "%s [%s] via %s(%s:%d)\n%s\n", timestr, string, proxy->name, proxy->host, proxy->port, url);
-
-  fflush(config->logfd);
 
   close_log();
 }
