@@ -21,57 +21,35 @@
 #include <fnmatch.h>
 #include <string.h>
 #include "config.h"
-
-static void
-readline(char *buf, char *list, int *pos, int size) {
-  /* a list may be like this:
-   *
-   * facebook.com\nhttp://media-cache-*.pinterest.com/\r\n*
-   *
-   */
-
-  int i = 0; 
-
-  while (*pos < size 
-	 && list[*pos] != '\n'
-	 && list[*pos] != '\r') {
-    buf[i] = list[*pos];
-    i++; (*pos)++;
-  }
-  while (list[*pos] == '\n' || list[*pos] == '\r')
-    (*pos)++;
-
-  buf[i] = 0;
-}
+#include "util.h"
 
 struct proxy_t *
 match_list(char *url) {
-  // 2KB line should be enough
-  char buf[2048];
-  int pos = 0, size;
 
   struct acllist *al = config->acl_h;
   struct acl *node = al->data;
 
+  char *domain = get_domain(url);
   while (node != NULL) {
-    pos = 0;
       
-    size = strlen(node->data);
-    while (1) {
+    struct hashmap_s *map = node->data;
 
-      readline(buf, node->data, &pos, size);
+    struct hashentry_s *it = hashmap_find_head(map, domain);
 
-      if (buf[0] == 0) break;
+    while (it != NULL) {
+      printf("matching: %s\n", it->data);
 
-      if (strcasestr(url, buf) != NULL 
-	  || !fnmatch(buf, url, FNM_CASEFOLD)) {
+      if (strcasestr(url, it->data) != NULL 
+	  || fnmatch(it->data, url, FNM_CASEFOLD) == 0) 
 
 	return node->proxy;
-      }
+
+      it = hashmap_find_next(it, domain);
+      
     }
     node = node->next;
   }
-
+  //puts("no matched");
   return config->default_proxy;
 }
 

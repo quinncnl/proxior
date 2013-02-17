@@ -29,6 +29,10 @@
 #include <stdarg.h>
 #include <arpa/inet.h>
 
+
+static void
+read_client_http_proxy(struct bufferevent *bev, void *ptr);
+
 /* read data from server to client */
 
 static void
@@ -37,7 +41,7 @@ read_server(struct bufferevent *bev, void *ctx) {
   struct bufferevent *bev_client = conn->be_client;
   char version[10];
   int code;
-
+  
   if (conn->headline) {
     char buf[64];
     evbuffer_copyout(bufferevent_get_input(bev), buf, 64);
@@ -79,6 +83,7 @@ free_conn(conn_t *conn) {
 static void 
 server_event(struct bufferevent *bev, short e, void *ptr) {
   conn_t *conn = ptr;
+  // perror("SERVER EVENT");
   if (e & BEV_EVENT_CONNECTED) {
     
     conn->headline = 1;
@@ -94,15 +99,15 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
       int code = evutil_socket_geterror(bufferevent_getfd(conn->be_server)); 
 
       log_error(code,  evutil_socket_error_to_string(code), conn->url, conn->proxy);
-      
-      evbuffer_add_printf(bufferevent_get_output(conn->be_client),
-			  "HTTP/1.1 502 Bad Gateway\r\n"
-			  "Content-Length: 16\r\n"
-			  "Connection: close\r\n\r\n"
-			  "Connection Reset."
-			  );
-      return;
 
+      perror("Using try-proxy.");
+      conn->proxy = config->try_proxy;
+      conn->tos = HTTP_PROXY;
+
+      bufferevent_free(conn->be_server);
+
+      read_client_http_proxy(conn->be_client, conn);
+      return;
     }
 
     free_conn(conn);
@@ -135,7 +140,7 @@ http_ready_cb(void (*callback)(void *ctx), void *ctx) {
       // Don't store request line(first line) in header.
       // evbuffer_add_printf(s->header, "%s\r\n", line);
 
-      printf("%s %s\n", conn->method, conn->url);
+      printf("CC: %s %s\n", conn->method, conn->url);
       free(line);
       s->eor = 0;
     }
@@ -150,16 +155,15 @@ http_ready_cb(void (*callback)(void *ctx), void *ctx) {
 	break;
       }
 
-      evbuffer_add_printf(s->header, "%s\r\n", line);
  
-      if (s->length == 0) {
-	sscanf(line, "%s %s", header, header_v);
+      sscanf(line, "%s %s", header, header_v);
 
-	if (strcmp(header, "Content-Length:") == 0) {
-	  s->length = atoi(header_v);
-	  //printf("length found: %d\n", s->length);
-	}
-      }
+      
+      if (strcmp(header, "Content-Length:") == 0) 
+	s->length = atoi(header_v);
+
+      if (strcmp(header, "Proxy-Connection:")) 
+	evbuffer_add_printf(s->header, "%s\r\n", line);
 
       free(line);
     } // while
@@ -172,9 +176,7 @@ http_ready_cb(void (*callback)(void *ctx), void *ctx) {
 
     if (s->cont == NULL) s->cont = evbuffer_new();
 
-    int read = evbuffer_remove_buffer(buffer, s->cont, s->length);
-    s->read += read;
-    //printf("read: %d\n", read);
+    s->read += evbuffer_remove_buffer(buffer, s->cont, s->length);
 
     if (s->read != s->length) return;
   }
@@ -224,11 +226,24 @@ read_direct_http(void *ctx) {
 
   evbuffer_add_printf(output, "%s %s %s\r\n", conn->method, pos, conn->version);
 
-  evbuffer_remove_buffer(conn->state->header, output, 2048);
+  int header_s = evbuffer_get_length(conn->state->header);
+
+  char *header = malloc(header_s);
+
+  evbuffer_copyout(conn->state->header, header, header_s);
+
+  //printf("%s", header);
+
+  evbuffer_add(output, header, header_s);
+  free(header);
 
   if (conn->state->length) {
-    evbuffer_remove_buffer(conn->state->cont, output, conn->state->length);
-    
+    char *cont = malloc(conn->state->length);
+  
+    evbuffer_copyout(conn->state->cont, cont, conn->state->length);
+
+    evbuffer_add(output, cont, conn->state->length);
+    free(cont); 
   }
 }
 
@@ -301,8 +316,11 @@ read_client_http_proxy(struct bufferevent *bev, void *ptr) {
 
   evbuffer_add_printf(output, "%s %s %s\r\n", conn->method, conn->url, conn->version);
 
-  if (bufferevent_read_buffer(bev, output) == -1) 
-    perror("error");
+  if (conn->state && conn->state->header) {
+    evbuffer_remove_buffer(conn->state->header, output, -1);
+  }
+  else 
+    bufferevent_read_buffer(bev, output);
 
   bufferevent_setcb(bevs, NULL, NULL, server_event, conn);
   bufferevent_enable(bevs, EV_READ|EV_WRITE);
@@ -384,14 +402,6 @@ client_event(struct bufferevent *bev, short e, void *ptr) {
     }
 }
 
-/* void signal_cb(evutil_socket_t fd, short what, void *arg) */
-/* { */
-/*     printf("signal\n"); */
-
-/* } */
-
-/* accept a connection */
-
 static void
 accept_conn_cb(struct evconnlistener *listener,
 	       evutil_socket_t fd, struct sockaddr *address, int socklen,
@@ -401,9 +411,6 @@ accept_conn_cb(struct evconnlistener *listener,
   conn_t *conn = calloc(sizeof(conn_t), 1);
 
   conn->be_client = bev;
-  
-  //event_new(base, fd, EV_SIGNAL|EV_PERSIST, signal_cb,
-  //         (char*)"Reading event");
 
   bufferevent_setcb(bev, read_client, NULL, client_event, conn);
   bufferevent_enable(bev, EV_READ|EV_WRITE);

@@ -49,3 +49,21 @@ free_parsed_url (struct parsed_url *url) {
   free(url->host);
   free(url);
 }
+
+char *get_domain(char *ori) {
+  static char url[2500];
+  strcpy(url, ori);
+
+  char *s = strstr(url, "//\0");
+  if (s == NULL) s = url;
+  else s += 2;
+
+  s = strtok(s, "/");
+  char *s2 = strrchr(s, '.');
+  s2--;
+  while (strncmp(s2, ".", 1) && s2 > s) s2--;
+  if (*s2 == '.')  s2++;
+
+  return strtok(s2, ":");
+}
+

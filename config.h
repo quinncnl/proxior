@@ -2,7 +2,7 @@
 #define _CONFIG_H_
 
 #include <stdio.h>
-
+#include "hashmap.h"
 #include <event2/util.h>
 
 struct proxy_t {
@@ -19,7 +19,7 @@ struct proxylist {
 
 struct acl {
   char *name;
-  char *data;
+  struct hashmap_s *data;
   struct proxy_t *proxy;
   struct acl *next;
 };
@@ -33,6 +33,7 @@ typedef struct {
   struct proxylist *proxy_h;
   struct acllist *acl_h;
   struct proxy_t *default_proxy;
+  struct proxy_t *try_proxy;
   struct timeval timeout;
   char *listen_addr;
   short listen_port;

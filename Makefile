@@ -4,7 +4,7 @@ BINDIR = $(PREFIX)/bin
 CC=gcc
 CFLAGS=-c -Wall -g
 LDFLAGS=-levent -g
-SOURCES=config.c http.c logging.c match.c util.c main.c rpc.c
+SOURCES=config.c http.c logging.c match.c util.c main.c rpc.c hashmap.c
 OBJECTS=$(SOURCES:.c=.o)
 EXECUTABLE=proxior
 

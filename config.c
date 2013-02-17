@@ -19,6 +19,7 @@
 
 
 #include "config.h"
+#include "util.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -59,24 +60,31 @@ add_acl(struct acllist *al, char *proxy_name, char *list) {
   char *path = get_file_path(list);
 
   FILE *fh = fopen(path, "r");
+  char buf[200];
+
   if (fh == NULL) {
     perror("Unable to open list file.");
     exit(1);
   }
 
-  fseek(fh, 0L, SEEK_END);
-  long s = ftell(fh);
-  char *buffer;
-  rewind(fh);
-  buffer = malloc(s);
-  if (buffer != NULL )
-    fread(buffer, s, 1, fh);
+  struct hashmap_s *map = hashmap_create(101);
+
+  while (fgets(buf, sizeof(buf), fh)) {
+    int len = strlen(buf) - 1;
+
+    if (len == -1) break;
+
+    if(buf[len] == '\n') 
+      buf[len] = 0;
+
+    hashmap_insert(map, get_domain(buf), buf);
+  }    
 
   fclose(fh);
 
   acl->name = strdup(list);
   acl->proxy = find_proxy(proxy_name);
-  acl->data = buffer;
+  acl->data = map;
   acl->next = al->data;
   al->data = acl;
   al->count++;
@@ -85,6 +93,11 @@ add_acl(struct acllist *al, char *proxy_name, char *list) {
 static void 
 set_default_proxy(char *proxy_name) {
   config->default_proxy = find_proxy(proxy_name);
+}
+
+static void 
+set_try_proxy(char *proxy_name) {
+  config->try_proxy = find_proxy(proxy_name);
 }
 
 static void
@@ -133,13 +146,15 @@ void load_config(char path[]) {
     if (strcmp(word1, "proxy") == 0) {
       add_proxy(plist, word2, word3);
     }
-    else if (strcmp(word1, "acl") == 0) {
+    else if (strcmp(word1, "acl") == 0)
       add_acl(alist, word2, word3);
 
-    }
-    else if (strcmp(word1, "acl-default") == 0) {
+    else if (strcmp(word1, "acl-default") == 0) 
       set_default_proxy(word2);
-    }
+
+    else if (strcmp(word1, "acl-try") == 0) 
+      set_try_proxy(word2);
+    
     else if (strcmp(word1, "timeout") == 0) 
       set_timeout(word2);
     else if (strcmp(word1, "listen") == 0)
@@ -150,7 +165,7 @@ void load_config(char path[]) {
 }
 
 void update_list(const char *list, const char *listname) {
-
+  /*
   FILE *fh = fopen(listname, "w");
   fwrite(list, 1, strlen(list), fh);
   fclose(fh);
@@ -170,6 +185,7 @@ void update_list(const char *list, const char *listname) {
     it->data = malloc(newsize);
   }
   strcpy(it->data, list);
+  */
 }
 
 char *get_file_path(char *filename) {

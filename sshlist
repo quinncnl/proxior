@@ -1,4 +1,6 @@
-.google.com
+google.com
+ytimg.com
+https://*.youtube.com/*
 blogger.com
 sourceforge.net
 ytimg.com
@@ -13,7 +15,7 @@ http://goo.gl/
 staticflickr.com
 nytimes.com
 api.pinterest.com
-http://64.62.222.236/
+64.62.222.236
 googleusercontent.com
 gstatic.com
 facebook.com
@@ -44,7 +46,6 @@ latimes.com
 gtimg.cn
 bayimg.com/
 http://www.hideipvpn.com/
-http://upload.wikimedia.org/
 youmaker.com/
 wordpress.com
 http://www.epochtimes.com/
