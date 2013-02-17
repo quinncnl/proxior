@@ -34,13 +34,17 @@ font: 28px "Trebuchet MS", sans-serif;
 		<li><a href="#tabs-4">About</a></li>
 	</ul>
 	<div id="tabs-1"><form id="edform">
-<strong>List Name:</strong><br />
-<select style="width:100px" name="listname" id="listname" onchange='getlist(this.value)'></select><br />
+<p><strong>Add domain</strong></p>
+	  
+Select a URL list: <select style="width:100px" name="listname" id="listname" onchange='getlist(this.value)'></select><br />
 
-<strong>List Content:</strong><br />
-<textarea name="S" cols="50" rows="40" id="data"></textarea><br />
-<input type="button" value="Update" onclick="dosubmit()" />
-</form>
+<p>Add a URL rule: <input type="text" /> <br /><input type="button"
+value="Add" /></p>
+
+<p><strong>Query a URL</strong></p>
+<input type="text" /><br />
+<input type="button" value="Find" onclick="dosubmit()" />
+
 </div>
 <div id="tabs-2"><textarea style="width:99%" id="log" cols="50"
   rows="40" id="data"></textarea><br />
