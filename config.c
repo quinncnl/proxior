@@ -185,6 +185,19 @@ void update_rule(char *list, char *rule)
 
 }
 
+void remove_rule(char *list, char *rule) 
+{
+  struct acl *it = config->acl_h->data;
+
+  while (it != NULL) {
+
+    if (strcmp(list, it->name) == 0) 
+      hashmap_remove(it->data, rule);
+
+    it = it->next;
+  }
+}
+
 char *get_file_path(char *filename) 
 {
   static char path[64];

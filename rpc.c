@@ -137,7 +137,7 @@ handle_request(void *ctx) {
       get_lists(rsps);
 
     else if (strncmp(conn->url, "/query?", 7) == 0)
-      query(rsps, conn->url + 7);
+      query(rsps, evhttp_decode_uri(conn->url + 7));
 
     else if (strcmp(conn->url, "/getlog") == 0) 
       get_log(rsps);
@@ -159,7 +159,7 @@ handle_request(void *ctx) {
 
     const char *path = evhttp_uri_get_path(uri);
 
-    if (strcmp(path, "/addrule") == 0) {
+    if (strcmp(path, "/addrule") == 0 || strcmp(path, "/rmrule") == 0) {
 
       struct evkeyvalq kvc;
       evhttp_parse_query_str(cont, &kvc);
@@ -167,7 +167,12 @@ handle_request(void *ctx) {
       char *list = evhttp_decode_uri(evhttp_find_header(&kvc, "list"));
       char *rule = evhttp_decode_uri(evhttp_find_header(&kvc, "rule"));
 
-      update_rule(list, rule);
+      if (strcmp(path, "/addrule") == 0) 
+	update_rule(list, rule);
+
+      else 
+	remove_rule(list, rule);
+
       evbuffer_add_printf(rsps, "OK");
 
       free(list);

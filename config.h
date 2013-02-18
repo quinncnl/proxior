@@ -50,6 +50,8 @@ void save_config();
 
 void update_rule(char *list, char *rule);
 
+void remove_rule(char *list, char *rule);
+
 char *get_file_path(char *);
 
 void flush_list() ;
