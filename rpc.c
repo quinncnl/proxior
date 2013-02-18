@@ -159,7 +159,7 @@ handle_request(void *ctx) {
 
     const char *path = evhttp_uri_get_path(uri);
 
-    if (strcmp(path, "/update") == 0) {
+    if (strcmp(path, "/addrule") == 0) {
 
       struct evkeyvalq kvc;
       evhttp_parse_query_str(cont, &kvc);
