@@ -28,22 +28,25 @@ font: 28px "Trebuchet MS", sans-serif;
 <h1 class="title">Proxior Options</h1>
 <div id="tabs">
 	<ul>
-		<li><a href="#tabs-1">List</a></li>
+		<li><a href="#tabs-1">Rules</a></li>
 		<li><a href="#tabs-2">Log</a></li>
 		<li><a href="#tabs-3">Setting</a></li>
 		<li><a href="#tabs-4">About</a></li>
 	</ul>
-	<div id="tabs-1"><form id="edform">
-<p><strong>Add domain</strong></p>
+	<div id="tabs-1">
 	  
-Select a URL list: <select style="width:100px" name="listname" id="listname" onchange='getlist(this.value)'></select><br />
+<p><strong>Query a URL</strong></p>
+<input type="text" size="80" /><br />
+<input type="button" value="Find" onclick="dosubmit()" />
+	  
+	  <p><strong>Add domain</strong></p>
+	  
+Select a URL list: <br />
+	  <select style="width:100px" name="listname" id="listname" onchange='getlist(this.value)'></select><br />
 
-<p>Add a URL rule: <input type="text" /> <br /><input type="button"
+<p>Add a URL rule: <br /><input type="text" size="80" /> <br /><input type="button"
 value="Add" /></p>
 
-<p><strong>Query a URL</strong></p>
-<input type="text" /><br />
-<input type="button" value="Find" onclick="dosubmit()" />
 
 </div>
 <div id="tabs-2"><textarea style="width:99%" id="log" cols="50"

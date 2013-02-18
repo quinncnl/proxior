@@ -1,15 +1,6 @@
 var curlist;
 var target;
 
-function getlist(listname) {
-    curlist = listname;
-    $.ajax({
-	url: "http://"+target+"/getlist?"+listname,
-	success: function( list ) {
-	    $( "#data" ).html(list);
-	}
-    });
-}
 
 var listshtml = "";
 function loadlist() {
@@ -69,7 +60,7 @@ function douptarget() {
     target = $("#target_proxy").val();
 }
 
-function dosubmit() {
+function do_find() {
 
     $.ajax({
 	type: "POST",
