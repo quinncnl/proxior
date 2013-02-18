@@ -48,10 +48,11 @@ void load_config(char *);
 
 void save_config();
 
-void update_list(const char *list, const char *listname) ;
+void update_rule(char *list, char *rule);
 
 char *get_file_path(char *);
 
+void flush_list() ;
 //void free_config();
 
 #endif /* _CONFIG_H_ */

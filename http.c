@@ -135,6 +135,14 @@ http_ready_cb(void (*callback)(void *ctx), void *ctx) {
     if (s->eor) {
       line = evbuffer_readln(buffer, NULL, EVBUFFER_EOL_CRLF);
 
+      if (line == NULL) return;
+
+      if (strlen(line) > MAX_URL_LEN) {
+	free(line);
+	free_conn(conn);
+	return;
+      }
+
       sscanf(line, "%s %s %s", conn->method, conn->url, conn->version);
 
       // Don't store request line(first line) in header.
@@ -154,10 +162,8 @@ http_ready_cb(void (*callback)(void *ctx), void *ctx) {
 	s->is_cont = 1;
 	break;
       }
-
  
       sscanf(line, "%s %s", header, header_v);
-
       
       if (strcmp(header, "Content-Length:") == 0) 
 	s->length = atoi(header_v);
@@ -190,6 +196,8 @@ http_ready_cb(void (*callback)(void *ctx), void *ctx) {
   s->read = 0;
   s->length = 0;
   s->is_cont = 0;
+
+  evbuffer_drain(s->header, evbuffer_get_length(s->header));
 }
 
 static void
@@ -232,7 +240,7 @@ read_direct_http(void *ctx) {
 
   evbuffer_copyout(conn->state->header, header, header_s);
 
-  //printf("%s", header);
+  // printf("HEADER-------------------->\n%s\n<-------------------\n", header);
 
   evbuffer_add(output, header, header_s);
   free(header);
@@ -359,6 +367,14 @@ find out requested url and apply switching rules  */
 
   char *line;
   line = evbuffer_readln(bufferevent_get_input(bev), NULL, EVBUFFER_EOL_ANY);
+
+  if (line == NULL) return;
+
+  if (strlen(line) > MAX_URL_LEN) {
+    free(line);
+    free_conn(conn);
+    return;
+  }
 
   sscanf(line, "%s %s %s", conn->method, conn->url, conn->version);
 

@@ -60,7 +60,7 @@ add_acl(struct acllist *al, char *proxy_name, char *list) {
   char *path = get_file_path(list);
 
   FILE *fh = fopen(path, "r");
-  char buf[200];
+  char *buf = malloc(200);
 
   if (fh == NULL) {
     perror("Unable to open list file.");
@@ -69,7 +69,7 @@ add_acl(struct acllist *al, char *proxy_name, char *list) {
 
   struct hashmap_s *map = hashmap_create(101);
 
-  while (fgets(buf, sizeof(buf), fh)) {
+  while (fgets(buf, 200, fh)) {
     int len = strlen(buf) - 1;
 
     if (len == -1) break;
@@ -77,9 +77,9 @@ add_acl(struct acllist *al, char *proxy_name, char *list) {
     if(buf[len] == '\n') 
       buf[len] = 0;
 
-    hashmap_insert(map, get_domain(buf), buf);
+    hashmap_insert(map, buf);
   }    
-
+  free(buf);
   fclose(fh);
 
   acl->name = strdup(list);
@@ -164,33 +164,60 @@ void load_config(char path[]) {
 
 }
 
-void update_list(const char *list, const char *listname) {
-  /*
-  FILE *fh = fopen(listname, "w");
-  fwrite(list, 1, strlen(list), fh);
-  fclose(fh);
+/* Update single URL rule */
 
-  //update cache
+void update_rule(char *list, char *rule)
+{
+
+  /* Remove existing rule */
+
   struct acl *it = config->acl_h->data;
 
   while (it != NULL) {
-    if (strcmp(listname, it->name) == 0) break;
+
+    hashmap_remove(it->data, rule);
+
+    if (strcmp(list, it->name) == 0) 
+      hashmap_insert(it->data, rule);
+
     it = it->next;
   }
-  assert(it != NULL);
 
-  int newsize = strlen(list) + 1;
-  if (strlen(it->data) < newsize) {
-    free(it->data);
-    it->data = malloc(newsize);
-  }
-  strcpy(it->data, list);
-  */
 }
 
-char *get_file_path(char *filename) {
+char *get_file_path(char *filename) 
+{
   static char path[64];
   strcpy(path, config->path);
   strcat(path, filename);
   return path;
+}
+
+/* Flush all lists to disk */
+
+void flush_list() 
+{
+  struct acl *acl = config->acl_h->data;
+  struct hashmap_s *map;
+  FILE *fd;
+  struct hashentry_s *it;
+  int i;
+
+  while (acl) {
+    map = acl->data;
+    fd = fopen(get_file_path(acl->name), "w");
+
+    for (i = 0; i < map->size; i++) {
+      
+      it = map->buckets[i].head;
+      while (it) {
+	puts(it->data);
+	fprintf(fd, "%s\n", it->data);
+	it = it->next;
+      }
+    }
+    fclose(fd);
+    acl = acl->next;
+  }
+
 }

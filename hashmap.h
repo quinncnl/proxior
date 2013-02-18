@@ -24,19 +24,19 @@ struct hashmap_s {
         struct hashbucket_s *buckets;
 };
 
-
-
 struct hashmap_s *
 hashmap_create (unsigned int nbuckets) ;
 
 int
-hashmap_insert (hashmap_t map, const char *key, const char *data);
+hashmap_insert (hashmap_t map, char *rule);
 
 struct hashentry_s *
 hashmap_find_head(hashmap_t map, const char *key);
 
 struct hashentry_s *
-hashmap_find_next(struct hashentry_s *ent, char *key);
+hashmap_find_next(struct hashentry_s *ent, const char *key);
 
+void
+hashmap_remove (hashmap_t map, const char *rule);
 
 #endif /* _HASHMAP_H_ */

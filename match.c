@@ -13,7 +13,7 @@
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with Foobar.  If not, see <http://www.gnu.org/licenses/>.
+  along with Proxior.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
@@ -49,7 +49,7 @@ match_list(char *url) {
     }
     node = node->next;
   }
-  //puts("no matched");
+
   return config->default_proxy;
 }
 

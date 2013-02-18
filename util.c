@@ -18,6 +18,7 @@
 */
 
 #include "util.h"
+#include "common.h"
 
 /* Parse HTTP URL
  * This will make a copy of the original url. 
@@ -50,8 +51,8 @@ free_parsed_url (struct parsed_url *url) {
   free(url);
 }
 
-char *get_domain(char *ori) {
-  static char url[2500];
+char *get_domain(const char *ori) {
+  static char url[MAX_URL_LEN];
   strcpy(url, ori);
 
   char *s = strstr(url, "//\0");
@@ -61,6 +62,7 @@ char *get_domain(char *ori) {
   s = strtok(s, "/");
   char *s2 = strrchr(s, '.');
   s2--;
+
   while (strncmp(s2, ".", 1) && s2 > s) s2--;
   if (*s2 == '.')  s2++;
 

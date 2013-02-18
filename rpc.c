@@ -13,7 +13,7 @@
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with Foobar.  If not, see <http://www.gnu.org/licenses/>.
+  along with Proxior.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
@@ -21,7 +21,9 @@
 #include <event2/event.h>
 #include <event.h>
 #include <sys/queue.h>
+#include <fnmatch.h>
 
+#include "util.h"
 #include "rpc.h"
 #include "config.h"
 #include "http.h"
@@ -77,16 +79,33 @@ rm_log(struct evbuffer *rsps) {
 }
 
 static void
-get_list(struct evbuffer *rsps, char *listname) {
-  struct acl *it = config->acl_h->data;
+query(struct evbuffer *rsps, char *url) 
+{
+  struct acllist *al = config->acl_h;
+  struct acl *node = al->data;
 
-  while (it != NULL) {
-    if (strcmp(listname, it->name) == 0) break;
-    it = it->next;
+  char *domain = get_domain(url);
+
+  while (node != NULL) {
+      
+    struct hashmap_s *map = node->data;
+
+    struct hashentry_s *it = hashmap_find_head(map, domain);
+
+    while (it != NULL) {
+      if (strcasestr(url, it->data) != NULL 
+	  || fnmatch(it->data, url, FNM_CASEFOLD) == 0) 
+
+	evbuffer_add_printf(rsps, "%s|%s\n", node->name, it->data);
+
+      it = hashmap_find_next(it, domain);
+      
+    }
+    node = node->next;
   }
 
-  evbuffer_add_printf(rsps, "%s", it->data);
 }
+
 
 static void
 ret(struct bufferevent *bev, struct evbuffer *rsps) {
@@ -116,8 +135,10 @@ handle_request(void *ctx) {
       get_proxies(rsps);
     else if (strcmp(conn->url, "/getlists") == 0) 
       get_lists(rsps);
-    else if (strncmp(conn->url, "/getlist?", 9) == 0)
-      get_list(rsps, conn->url+9);
+
+    else if (strncmp(conn->url, "/query?", 7) == 0)
+      query(rsps, conn->url + 7);
+
     else if (strcmp(conn->url, "/getlog") == 0) 
       get_log(rsps);
 
@@ -138,17 +159,23 @@ handle_request(void *ctx) {
 
     const char *path = evhttp_uri_get_path(uri);
 
-    if (strcmp(path, "/updatelist") == 0) {
-      const char *listname = evhttp_find_header(&kv, "list");
+    if (strcmp(path, "/update") == 0) {
 
       struct evkeyvalq kvc;
       evhttp_parse_query_str(cont, &kvc);
       
-      char *newcont = evhttp_decode_uri(evhttp_find_header(&kvc, "data"));
-      update_list(newcont, listname);
+      char *list = evhttp_decode_uri(evhttp_find_header(&kvc, "list"));
+      char *rule = evhttp_decode_uri(evhttp_find_header(&kvc, "rule"));
+
+      update_rule(list, rule);
       evbuffer_add_printf(rsps, "OK");
 
-      free(newcont);
+      free(list);
+      free(rule);
+    }
+    else if (strcmp(path, "/flush") == 0) {
+      flush_list();
+      evbuffer_add_printf(rsps, "OK");
     }
     else if (strcmp(path, "/rmlog") == 0) {
       rm_log(rsps);

@@ -1,7 +1,7 @@
 #ifndef _COMMON_H_
 #define _COMMON_H_
 
-#define MAX_URL_LEN 3500
+#define MAX_URL_LEN 3600
 
 #include <stdio.h>
 #include <event2/listener.h>
