@@ -11,7 +11,7 @@
 
 <style>
 	body{
-		font: 62.5% "Trebuchet MS", sans-serif;
+		font: 100% "Trebuchet MS", sans-serif;
 		margin: 50px;
 }
 .fakewindowcontain .ui-widget-overlay {
@@ -37,15 +37,18 @@ font: 28px "Trebuchet MS", sans-serif;
 	  
 <p><strong>Query a URL</strong></p>
 <input type="text" size="80" /><br />
-<input type="button" value="Find" onclick="dosubmit()" />
+<input type="button" value="Find" id="iptquery" onclick="do_find()" />
 	  
 	  <p><strong>Add domain</strong></p>
 	  
-Select a URL list: <br />
-	  <select style="width:100px" name="listname" id="listname" onchange='getlist(this.value)'></select><br />
+1: Select a URL list: <br />
+<form id="urllist">
+<br>
+<input type="radio" name="sex" value="female">Female
+</form>
 
-<p>Add a URL rule: <br /><input type="text" size="80" /> <br /><input type="button"
-value="Add" /></p>
+<p>2: URL rule: <br /><input type="text" size="80" /> <br /><input type="button"
+value="Add" onclick="do_addrule()" /></p>
 
 
 </div>

@@ -1,9 +1,8 @@
-var curlist;
 var target;
-
 
 var listshtml = "";
 function loadlist() {
+    var check=" checked";
     if (listshtml != "") $("#listname").html(listshtml);
     else
 	$.ajax({
@@ -13,14 +12,16 @@ function loadlist() {
 		var first = true;
 		for(var i=list.length-2; i>=0; i--) {
 		    var name=list[i].split(",")[0];
+
+		    listshtml += '<label for="'+name+'"><input type="radio"'+check+' name="radiolist" id="'+name+'" value="'+name+'">' + name +'</label>';
 		    if (first) {
-			getlist(name);
 			first = false;
+			check="";
 		    }
-		    listshtml +="<option name='"+name+"'>"+name+"</option>";
+
 		}
 
-		$("#listname").html(listshtml);
+		$("#urllist").html(listshtml);
 
 	    }
 	});
@@ -50,7 +51,6 @@ $(function() {
 	}
     });
 
-    curlist = listname;
     $("#target_proxy").val(target);
 
 });
@@ -64,8 +64,8 @@ function do_find() {
 
     $.ajax({
 	type: "POST",
-	url: "http://"+target+"/updatelist?list="+curlist,
-	data: {data: encodeURIComponent($("#data").val())},
+	url: "http://"+target+"/query",
+	data: {data: encodeURIComponent($("#iptquery").val())},
 	success: function(rs) {
 	   
 	}
@@ -77,6 +77,18 @@ function dormlog() {
     $.ajax({
 	type: "POST",
 	url: "http://"+target+"/rmlog",
+	success: function(rs) {
+	    $( "#log" ).html("");
+	}
+    });
+}
+
+function do_addrule() {
+    alert($("[name=radiolist]:checked").val());
+    $.ajax({
+	type: "POST",
+	url: "http://"+target+"/addrule",
+	data: {data: encodeURIComponent($("#iptquery").val())},
 	success: function(rs) {
 	    $( "#log" ).html("");
 	}
