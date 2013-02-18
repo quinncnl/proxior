@@ -152,7 +152,10 @@ hashmap_remove (hashmap_t map, const char *rule)
   while (it) {
 
     if (strcasecmp(it->key, domain) ||
-	strcasecmp(it->data, rule)) continue;
+	strcasecmp(it->data, rule)) {
+      it = it->next;
+      continue;
+    }
 
     next = it->next;
 
