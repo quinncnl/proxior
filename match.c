@@ -30,6 +30,9 @@ match_list(char *url) {
   struct acl *node = al->data;
 
   char *domain = get_domain(url);
+
+  if (domain == NULL) goto def;
+
   while (node != NULL) {
       
     struct hashmap_s *map = node->data;
@@ -50,6 +53,7 @@ match_list(char *url) {
     node = node->next;
   }
 
+ def:
   return config->default_proxy;
 }
 

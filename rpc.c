@@ -22,6 +22,10 @@
 #include <event.h>
 #include <sys/queue.h>
 #include <fnmatch.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 #include "util.h"
 #include "rpc.h"
@@ -53,21 +57,15 @@ get_lists(struct evbuffer *rsps) {
 static void
 get_log(struct evbuffer *rsps) {
   char *log = get_file_path("log");
-  FILE *fh = fopen(log, "r");
+  int fh = open(log, O_RDONLY);
+  struct stat st;
 
-  if (fh == NULL) return;
+  if (fh < 0) return;
 
-  fseek(fh, 0L, SEEK_END);
-  long s = ftell(fh);
-  char *buffer;
-  rewind(fh);
-  buffer = malloc(s);
-  if (buffer != NULL )
-    fread(buffer, s, 1, fh);
-  
-  fclose(fh);
-  evbuffer_add(rsps, buffer, s);
-  free(buffer);
+  fstat(fh, &st);
+
+  evbuffer_add_file(rsps,  fh, 0, st.st_size);
+
 }
 
 static void

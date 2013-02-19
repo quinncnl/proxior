@@ -61,6 +61,10 @@ char *get_domain(const char *ori) {
 
   s = strtok(s, "/");
   char *s2 = strrchr(s, '.');
+
+  if (s2 == NULL) 
+    return NULL;
+
   s2--;
 
   while (strncmp(s2, ".", 1) && s2 > s) s2--;

@@ -31,7 +31,7 @@
 
 
 static void
-read_client_http_proxy(struct bufferevent *bev, void *ptr);
+read_client_http_proxy(void *ptr);
 
 /* read data from server to client */
 
@@ -65,8 +65,10 @@ free_conn(conn_t *conn) {
     if (conn->state->cont) 
       evbuffer_free(conn->state->cont);
     
-    if (conn->state->header) 
+    if (conn->state->header) {
       evbuffer_free(conn->state->header);  
+      evbuffer_free(conn->state->header_b);  
+    }
 
     free(conn->state);
   }
@@ -75,6 +77,7 @@ free_conn(conn_t *conn) {
   if (conn->be_server) 
     bufferevent_free(conn->be_server);
   
+  if (conn->purl) free_parsed_url(conn->purl); 
   free(conn);
 }
 
@@ -100,13 +103,13 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
 
       log_error(code,  evutil_socket_error_to_string(code), conn->url, conn->proxy);
 
-      perror("Using try-proxy.");
+      perror("Using try-proxy");
       conn->proxy = config->try_proxy;
       conn->tos = HTTP_PROXY;
 
       bufferevent_free(conn->be_server);
 
-      read_client_http_proxy(conn->be_client, conn);
+      read_client_http_proxy(conn);
       return;
     }
 
@@ -125,6 +128,7 @@ http_ready_cb(void (*callback)(void *ctx), void *ctx) {
     conn->state = s = calloc(sizeof(struct state), 1);
     s->eor = 0;
     s->header = evbuffer_new();
+    s->header_b = evbuffer_new();
   }
 
   // header section
@@ -197,7 +201,12 @@ http_ready_cb(void (*callback)(void *ctx), void *ctx) {
   s->length = 0;
   s->is_cont = 0;
 
-  evbuffer_drain(s->header, evbuffer_get_length(s->header));
+  struct evbuffer *tmp;
+  evbuffer_drain(s->header_b,evbuffer_get_length(s->header_b));
+  tmp = s->header_b;
+  s->header_b = s->header;
+  s->header = tmp;
+
 }
 
 static void
@@ -219,12 +228,22 @@ read_direct_http(void *ctx) {
   conn_t *conn = ctx;
 
   // e.g. GET http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html HTTP/1.1
+
+  struct parsed_url *url = simple_parse_url(conn->url);
+
   if (conn->be_server == NULL) {
-    struct parsed_url *url = simple_parse_url(conn->url);
 
     connect_server(url->host, url->port, conn);
-    free_parsed_url(url);
   }
+  else if (strcmp(conn->purl->host, url->host) || conn->purl->port != url->port) {
+
+    free_parsed_url(conn->purl);   
+
+    bufferevent_free(conn->be_server);
+    connect_server(url->host, url->port, conn);
+  }
+
+  conn->purl = url;
 
   struct evbuffer *output = bufferevent_get_output(conn->be_server);
 
@@ -296,7 +315,7 @@ read_direct_https_handshake(void *ctx) {
 /* Connect to server directly. Need to take care of both http and https */
 
 static void
-read_client_direct(struct bufferevent *bev, void *ctx) {
+read_client_direct(void *ctx) {
   conn_t *conn = ctx;
 
   if (strcmp(conn->method, "CONNECT") == 0) {
@@ -311,29 +330,31 @@ read_client_direct(struct bufferevent *bev, void *ctx) {
 }
 
 static void
-read_client_http_proxy(struct bufferevent *bev, void *ptr) {
+read_client_http_proxy(void *ptr) {
   conn_t *conn = ptr;
   struct bufferevent *bevs;
 
   bevs = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
 
-  conn->be_client = bev;
   conn->be_server = bevs;
 
   struct evbuffer *output = bufferevent_get_output(bevs);
 
   evbuffer_add_printf(output, "%s %s %s\r\n", conn->method, conn->url, conn->version);
 
-  if (conn->state && conn->state->header) {
-    evbuffer_remove_buffer(conn->state->header, output, -1);
+  if (conn->state && conn->state->header_b) {
+    evbuffer_remove_buffer(conn->state->header_b, output, -1);
   }
   else 
-    bufferevent_read_buffer(bev, output);
+    bufferevent_read_buffer(conn->be_client, output);
+
+  if (conn->state && conn->state->cont) 
+    evbuffer_remove_buffer(conn->state->cont, output, -1);
 
   bufferevent_setcb(bevs, NULL, NULL, server_event, conn);
   bufferevent_enable(bevs, EV_READ|EV_WRITE);
 
-  if(bufferevent_socket_connect_hostname(bevs, NULL, AF_UNSPEC, conn->proxy->host, conn->proxy->port) == -1) {
+  if (bufferevent_socket_connect_hostname(bevs, NULL, AF_UNSPEC, conn->proxy->host, conn->proxy->port) == -1) {
     perror("DNS failure\n");
     exit(1);
   }
@@ -345,7 +366,7 @@ read_client(struct bufferevent *bev, void *ctx) {
   conn_t *conn = ctx;
 
   if (conn->tos == DIRECT) {
-    read_client_direct(bev, conn);
+    read_client_direct(conn);
     return;
   }
 
@@ -395,11 +416,11 @@ find out requested url and apply switching rules  */
 
   if (conn->proxy != NULL) {
     conn->tos = HTTP_PROXY;
-    read_client_http_proxy(bev, conn);
+    read_client_http_proxy(conn);
   }
   else {
     conn->tos = DIRECT;
-    read_client_direct(bev, conn);
+    read_client_direct(conn);
   }
 }
 

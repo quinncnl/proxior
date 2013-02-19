@@ -11,6 +11,7 @@ typedef struct conn
 {
   struct bufferevent *be_client, *be_server;
   char url[MAX_URL_LEN];
+  struct parsed_url *purl;
   char method[10];
   char version[10];
 
@@ -39,6 +40,7 @@ struct state {
   int eor;
 
   struct evbuffer *header;
+  struct evbuffer *header_b; // for trying on failure
   struct evbuffer *cont;
 };
 
