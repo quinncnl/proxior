@@ -37,6 +37,11 @@ match_list(char *url) {
       
     struct hashmap_s *map = node->data;
 
+    if (map->size == 0) {
+      node = node->next;
+      continue;
+    }
+  
     struct hashentry_s *it = hashmap_find_head(map, domain);
 
     while (it != NULL) {
@@ -50,6 +55,7 @@ match_list(char *url) {
       it = hashmap_find_next(it, domain);
       
     }
+
     node = node->next;
   }
 

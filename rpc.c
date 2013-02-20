@@ -57,15 +57,26 @@ get_lists(struct evbuffer *rsps) {
 static void
 get_log(struct evbuffer *rsps) {
   char *log = get_file_path("log");
-  int fh = open(log, O_RDONLY);
-  struct stat st;
+  FILE *fd = fopen(log, "r");
 
-  if (fh < 0) return;
+  if (fd == NULL) return;
 
-  fstat(fh, &st);
+  int lines = get_line_count(fd);
+  int start = lines - 50;
 
-  evbuffer_add_file(rsps,  fh, 0, st.st_size);
+  if (start < 0) start = 0;
 
+  int i; char buf[MAX_URL_LEN];
+  rewind(fd);
+
+  for (i = 0; i < start; i++) 
+    fgets(buf, MAX_URL_LEN, fd);
+
+
+  while (fgets(buf, MAX_URL_LEN, fd) != NULL)
+    evbuffer_add_printf(rsps, "%s", buf);
+
+  fclose(fd);
 }
 
 static void

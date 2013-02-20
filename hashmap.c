@@ -111,15 +111,17 @@ hashmap_insert (hashmap_t map, char *rule)
 
 struct hashentry_s *
 hashmap_find_head(hashmap_t map, const char *key) {
- 
- unsigned int hash = hashfunc (key, map->size);
- struct hashentry_s *it = map->buckets[hash].head;
 
- while (it && strcmp(it->key, key)) {
-   it = it->next;
- }
+  if (map->size == 0) return NULL;
+
+  unsigned int hash = hashfunc (key, map->size);
+  struct hashentry_s *it = map->buckets[hash].head;
+
+  while (it && strcmp(it->key, key)) {
+    it = it->next;
+  }
  
- return it;
+  return it;
 }
 
 struct hashentry_s *
@@ -144,6 +146,8 @@ hashmap_remove (hashmap_t map, const char *rule)
   
   struct hashentry_s *it, *next;
   char *domain = get_domain(rule);
+
+  if (map->size == 0) return;
 
   unsigned int hash = hashfunc (domain, map->size);
 

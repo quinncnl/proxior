@@ -67,7 +67,13 @@ add_acl(struct acllist *al, char *proxy_name, char *list) {
     exit(1);
   }
 
-  struct hashmap_s *map = hashmap_create(101);
+  int lines = get_line_count(fh);
+
+  printf("Rules in %s: %d\n", list, lines);
+
+  struct hashmap_s *map = hashmap_create(lines * 1.2);
+
+  rewind(fh);
 
   while (fgets(buf, 200, fh)) {
     int len = strlen(buf) - 1;
@@ -225,7 +231,6 @@ void flush_list()
       it = map->buckets[i].head;
       while (it) {
 	puts(it->data);
-	fprintf(fd, "%s\n", it->data);
 	it = it->next;
       }
     }

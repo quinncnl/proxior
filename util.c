@@ -73,3 +73,9 @@ char *get_domain(const char *ori) {
   return strtok(s2, ":");
 }
 
+int get_line_count(FILE *fh) {
+  int lines = 0;
+  while (EOF != (fscanf(fh, "%*[^\n]"), fscanf(fh, "%*c"))) 
+    ++lines;
+  return lines;
+}

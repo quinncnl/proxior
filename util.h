@@ -16,4 +16,6 @@ free_parsed_url (struct parsed_url *url);
 
 char *get_domain(const char *url);
 
+int get_line_count(FILE *fh) ;
+
 #endif /* _UTIL_H_ */

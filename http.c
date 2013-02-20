@@ -101,7 +101,9 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
 
       int code = evutil_socket_geterror(bufferevent_getfd(conn->be_server)); 
 
-      log_error(code,  evutil_socket_error_to_string(code), conn->url, conn->proxy);
+      if (code != EAGAIN && code != EPIPE) 
+
+	log_error(code,  evutil_socket_error_to_string(code), conn->url, conn->proxy);
 
       perror("Using try-proxy");
       conn->proxy = config->try_proxy;
