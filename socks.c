@@ -24,8 +24,11 @@
 static void 
 socks_event(struct bufferevent *bev, short e, void *ptr) 
 {
-  if (e & (BEV_EVENT_ERROR|BEV_EVENT_EOF|BEV_EVENT_TIMEOUT)) 
+  if (e & (BEV_EVENT_ERROR|BEV_EVENT_EOF|BEV_EVENT_TIMEOUT)) {
     bufferevent_free(bev);
+    conn_t *conn = ((struct socksctx *)ptr)->ctx;
+    conn->be_server = NULL;
+  }
 }
 
 static void

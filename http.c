@@ -35,11 +35,27 @@
 static void
 read_client_http_proxy(void *ptr);
 
-static void 
+static int 
 read_direct_http(void *ctx);
 
 static void
 read_client_direct(void *ctx) ;
+
+static void
+error_msg(struct evbuffer *output, char *msg) {
+
+  size_t size = strlen(msg);
+
+  evbuffer_add_printf(output,
+		      "HTTP/1.1 200 OK\r\n"
+		      "Content-Type: text/html\r\n"
+		      "Access-Control-Allow-Origin: *\r\n"
+		      "Connection: close\r\n"
+		      "Cache-Control: no-cache\r\n"
+		      "Content-Length: %d\r\n\r\n", (int) size);
+  
+  evbuffer_add(output, msg, size);
+}
 
 /* read data from server to client */
 
@@ -88,7 +104,7 @@ free_conn(conn_t *conn) {
   }
 
   bufferevent_free(conn->be_client);
-  if (conn->be_server) 
+  if (conn->be_server != NULL) 
     bufferevent_free(conn->be_server);
   
   if (conn->purl) free_parsed_url(conn->purl); 
@@ -119,14 +135,24 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
 
 	log_error(code,  evutil_socket_error_to_string(code), conn->url, conn->proxy);
 
-      perror("Using try-proxy");
-      conn->proxy = config->try_proxy;
-      conn->tos = HTTP_PROXY;
+     
+      if (conn->proxy == config->try_proxy) {
+	char msg[50] =  "There is an error connecting to proxy ";
+	strcat(msg, conn->proxy->name);
+	puts(msg);
+	error_msg(bufferevent_get_output(conn->be_client), msg);
+	return;
+      }
+      else {
+	perror("Using try-proxy");
+	conn->proxy = config->try_proxy;
+	conn->tos = HTTP_PROXY;
 
-      bufferevent_free(conn->be_server);
+	bufferevent_free(conn->be_server);
 
-      read_client_http_proxy(conn);
-      return;
+	read_client_http_proxy(conn);
+	return;
+      }
     }
 
     free_conn(conn);
@@ -135,7 +161,7 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
 }
 
 void
-http_ready_cb(void (*callback)(void *ctx), void *ctx) {
+http_ready_cb(int (*callback)(void *ctx), void *ctx) {
   conn_t *conn = ctx;
   struct state *s = conn->state; // s for shorthand
   struct evbuffer *buffer = bufferevent_get_input(conn->be_client);
@@ -209,7 +235,7 @@ http_ready_cb(void (*callback)(void *ctx), void *ctx) {
   else return;
 
   end:
-  (*callback)(ctx);
+  if ((*callback)(ctx)) return;
 
   // clean up and get ready for next request
   s->eor = 1;
@@ -252,23 +278,23 @@ read_client_socks_handshake(void *ptr) {
   }
   else
     read_client_direct(ptr);
-  //    http_ready_cb(read_client_direct, ptr);
+
 }
 
-static void 
+static int 
 read_direct_http(void *ctx) {
   conn_t *conn = ctx;
 
   // e.g. GET http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html HTTP/1.1
 
   struct parsed_url *url;
+  url = simple_parse_url(conn->url);
 
   if (conn->tos == DIRECT) {
-    url = simple_parse_url(conn->url);
+    
     if (conn->be_server == NULL) {
       connect_server(url->host, url->port, conn);
 
-      conn->purl = url;
     }
     else if (strcmp(conn->purl->host, url->host) || conn->purl->port != url->port) {
 
@@ -277,8 +303,24 @@ read_direct_http(void *ctx) {
       bufferevent_free(conn->be_server);
       connect_server(url->host, url->port, conn);
 
-      conn->purl = url;
     }
+    conn->purl = url;
+
+  }
+  else if (strcmp(conn->purl->host, url->host) 
+	   || conn->purl->port != url->port) {
+
+    free_parsed_url(conn->purl);  
+ 
+    free_parsed_url(url);
+
+    bufferevent_free(conn->be_server);
+    conn->be_server = NULL;
+
+    conn->not_sent_yet = 1;
+    read_client_socks_handshake(conn);
+    
+    return 1;
   }
 
   struct evbuffer *output = bufferevent_get_output(conn->be_server);
@@ -306,17 +348,21 @@ read_direct_http(void *ctx) {
     evbuffer_add(output, cont, conn->state->length);
     free(cont); 
   }
+
+  conn->not_sent_yet = 0;
+  return 0;
 }
 
-static void 
+static int 
 read_direct_https(void *ctx) {
   conn_t *conn = ctx;
   if (bufferevent_read_buffer(conn->be_client, bufferevent_get_output(conn->be_server)))
 
   fputs("error reading from client", stderr);
+  return 0;
 }
 
-static void 
+static int 
 read_direct_https_handshake(void *ctx) {
   conn_t *conn = ctx;
 
@@ -346,7 +392,7 @@ read_direct_https_handshake(void *ctx) {
   evbuffer_add_printf(bufferevent_get_output(conn->be_client), "HTTP/1.1 200 Connection established\r\n\r\n");
 
   conn->handshaked = 1;
-
+  return 1;
 }
 
 /* Connect to server directly. Need to take care of both http and https */
@@ -363,7 +409,10 @@ read_client_direct(void *ctx) {
       http_ready_cb(read_direct_https_handshake, ctx);
   }
   else {
-    http_ready_cb(read_direct_http, ctx);
+    if (conn->not_sent_yet)
+      read_direct_http(ctx);
+    else
+      http_ready_cb(read_direct_http, ctx);
   }
 }
 

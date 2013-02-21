@@ -50,7 +50,8 @@ struct parsed_url *simple_parse_url(char *ori_url) {
 
 void
 free_parsed_url (struct parsed_url *url) {
-  free(url->url);
+  if (url->url) 
+    free(url->url);
   free(url->host);
   free(url);
 }

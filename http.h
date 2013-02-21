@@ -28,7 +28,13 @@ typedef struct conn
 
   /* response headline */
   short headline;
+
+  // For CONNECT method
   short handshaked;
+
+  /* When connected to a new host via socks5, if there is data not sent yet, send it */
+  short not_sent_yet;
+
   /*  track current http state */
   struct state *state; 
 } conn_t;
@@ -48,7 +54,7 @@ struct state {
 };
 
 void
-http_ready_cb(void (*callback)(void *ctx), void *ctx);
+http_ready_cb(int (*callback)(void *ctx), void *ctx);
 
 void
 read_server(struct bufferevent *bev, void *ctx);

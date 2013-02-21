@@ -132,7 +132,7 @@ ret(struct bufferevent *bev, struct evbuffer *rsps) {
   evbuffer_remove_buffer(rsps, output, 102400);
 }
 
-static void
+static int
 handle_request(void *ctx) {
   conn_t *conn = ctx;
   struct evbuffer *rsps = evbuffer_new();
@@ -206,7 +206,7 @@ handle_request(void *ctx) {
   
   ret(conn->be_client, rsps);
   evbuffer_free(rsps);
-
+  return 1;
 }
 
 
