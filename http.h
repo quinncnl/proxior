@@ -17,7 +17,10 @@ typedef struct conn
 
   // type of service
   enum {
-    DIRECT = 0x01, HTTP_PROXY = 0x02, CONFIG = 0x03
+    DIRECT = 0x01,
+    HTTP_PROXY = 0x02,
+    SOCKS_PROXY = 0x03,
+    CONFIG = 0x08
   } tos;
 
   /* proxy to use, NULL for direct */
@@ -25,7 +28,7 @@ typedef struct conn
 
   /* response headline */
   short headline;
-  
+  short handshaked;
   /*  track current http state */
   struct state *state; 
 } conn_t;
@@ -44,12 +47,14 @@ struct state {
   struct evbuffer *cont;
 };
 
-
-#define CONNECT_DIRECT 1
-#define CONNECT_HTTP_PROXY 2
-
 void
 http_ready_cb(void (*callback)(void *ctx), void *ctx);
+
+void
+read_server(struct bufferevent *bev, void *ctx);
+
+void 
+server_event(struct bufferevent *bev, short e, void *ptr);
 
 void start();
 

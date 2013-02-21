@@ -27,12 +27,15 @@
 #include <arpa/inet.h>
 
 static void
-add_proxy(struct proxylist *pl, char *name, char *ap) {
+add_proxy(struct proxylist *pl, char *name, char *ap, unsigned char type) {
   struct proxy_t *proxy = malloc(sizeof(struct proxy_t));
   proxy->next = pl->data;
   strcpy(proxy->name, name);
   strcpy(proxy->host, strtok(ap, ":"));
   proxy->port = atoi(strtok(NULL, ""));
+
+  proxy->type = type;
+
   pl->data = proxy;
   pl->count++;
 }
@@ -149,9 +152,12 @@ void load_config(char path[]) {
   while(fgets(buffer, sizeof(buffer), fd)) {
     if (buffer[0] == '#'|| buffer[0] == '\n') continue;
     sscanf(buffer, "%s %s %s", word1, word2, word3);
-    if (strcmp(word1, "proxy") == 0) {
-      add_proxy(plist, word2, word3);
-    }
+    if (strcmp(word1, "proxy") == 0) 
+      add_proxy(plist, word2, word3, HTTP);
+
+    else if (strcmp(word1, "socks5") == 0)
+      add_proxy(plist, word2, word3, SOCKS);
+
     else if (strcmp(word1, "acl") == 0)
       add_acl(alist, word2, word3);
 
@@ -230,7 +236,7 @@ void flush_list()
       
       it = map->buckets[i].head;
       while (it) {
-	puts(it->data);
+	fprintf(fd, "%s\n", it->data);
 	it = it->next;
       }
     }

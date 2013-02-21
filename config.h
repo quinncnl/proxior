@@ -8,7 +8,13 @@
 struct proxy_t {
   char name[20];
   char host[20];
-  int port;
+  unsigned short port;
+
+  enum {
+    HTTP = 0x01,
+    SOCKS = 0x02
+  } type;
+  
   struct proxy_t *next;
 };
 

@@ -4,7 +4,7 @@
 #include "common.h"
 
 struct parsed_url {
-  int port;
+  unsigned short port;
   char *url;
   char *host;
 };

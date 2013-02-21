@@ -13,7 +13,7 @@
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with Foobar.  If not, see <http://www.gnu.org/licenses/>.
+  along with Proxior.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
@@ -23,6 +23,8 @@
 #include "match.h"
 #include "util.h"
 #include "rpc.h"
+#include "common.h"
+#include "socks.h"
 #include <errno.h>
 #include <event2/util.h>
 #include <event2/event.h>
@@ -33,9 +35,15 @@
 static void
 read_client_http_proxy(void *ptr);
 
-/* read data from server to client */
+static void 
+read_direct_http(void *ctx);
 
 static void
+read_client_direct(void *ctx) ;
+
+/* read data from server to client */
+
+void
 read_server(struct bufferevent *bev, void *ctx) {
   conn_t *conn = ctx;
   struct bufferevent *bev_client = conn->be_client;
@@ -44,8 +52,14 @@ read_server(struct bufferevent *bev, void *ctx) {
   
   if (conn->headline) {
     char buf[64];
+
     evbuffer_copyout(bufferevent_get_input(bev), buf, 64);
+
+    if (strlen(buf) == 0) return;
+
     sscanf(buf, "%s %d", version, &code);
+    
+    // Caused by reset or timeout from proxy server.
     if (code == 502)
       log_error(502, "Bad gateway.", conn->url, conn->proxy);
 
@@ -83,7 +97,7 @@ free_conn(conn_t *conn) {
 
 /* server event */
 
-static void 
+void 
 server_event(struct bufferevent *bev, short e, void *ptr) {
   conn_t *conn = ptr;
   // perror("SERVER EVENT");
@@ -225,27 +239,47 @@ connect_server(char *host, int port, conn_t *conn) {
   }
 }
 
+static void
+read_client_socks_handshake(void *ptr) {
+  conn_t *conn = ptr;
+
+  if (conn->be_server == NULL) {
+
+    struct parsed_url *url = simple_parse_url(conn->url);
+    conn->purl = url;
+  
+    conn->be_server = socks_connect(url->host, url->port, read_client_direct, ptr);
+  }
+  else
+    read_client_direct(ptr);
+  //    http_ready_cb(read_client_direct, ptr);
+}
+
 static void 
 read_direct_http(void *ctx) {
   conn_t *conn = ctx;
 
   // e.g. GET http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html HTTP/1.1
 
-  struct parsed_url *url = simple_parse_url(conn->url);
+  struct parsed_url *url;
 
-  if (conn->be_server == NULL) {
+  if (conn->tos == DIRECT) {
+    url = simple_parse_url(conn->url);
+    if (conn->be_server == NULL) {
+      connect_server(url->host, url->port, conn);
 
-    connect_server(url->host, url->port, conn);
+      conn->purl = url;
+    }
+    else if (strcmp(conn->purl->host, url->host) || conn->purl->port != url->port) {
+
+      free_parsed_url(conn->purl);   
+
+      bufferevent_free(conn->be_server);
+      connect_server(url->host, url->port, conn);
+
+      conn->purl = url;
+    }
   }
-  else if (strcmp(conn->purl->host, url->host) || conn->purl->port != url->port) {
-
-    free_parsed_url(conn->purl);   
-
-    bufferevent_free(conn->be_server);
-    connect_server(url->host, url->port, conn);
-  }
-
-  conn->purl = url;
 
   struct evbuffer *output = bufferevent_get_output(conn->be_server);
 
@@ -260,8 +294,6 @@ read_direct_http(void *ctx) {
   char *header = malloc(header_s);
 
   evbuffer_copyout(conn->state->header, header, header_s);
-
-  // printf("HEADER-------------------->\n%s\n<-------------------\n", header);
 
   evbuffer_add(output, header, header_s);
   free(header);
@@ -307,10 +339,13 @@ read_direct_https_handshake(void *ctx) {
     free(tmp);
   }
 
-  connect_server(host, port, conn);
+  if (conn->tos == DIRECT)
+    connect_server(host, port, conn);
   
   free(url);
   evbuffer_add_printf(bufferevent_get_output(conn->be_client), "HTTP/1.1 200 Connection established\r\n\r\n");
+
+  conn->handshaked = 1;
 
 }
 
@@ -321,7 +356,8 @@ read_client_direct(void *ctx) {
   conn_t *conn = ctx;
 
   if (strcmp(conn->method, "CONNECT") == 0) {
-    if (conn->be_server)
+
+    if (conn->handshaked)
       read_direct_https(ctx);
     else
       http_ready_cb(read_direct_https_handshake, ctx);
@@ -330,6 +366,7 @@ read_client_direct(void *ctx) {
     http_ready_cb(read_direct_http, ctx);
   }
 }
+
 
 static void
 read_client_http_proxy(void *ptr) {
@@ -367,7 +404,7 @@ static void
 read_client(struct bufferevent *bev, void *ctx) {
   conn_t *conn = ctx;
 
-  if (conn->tos == DIRECT) {
+  if (conn->tos == DIRECT || conn->tos == SOCKS_PROXY) {
     read_client_direct(conn);
     return;
   }
@@ -417,8 +454,14 @@ find out requested url and apply switching rules  */
   conn->proxy = match_list(conn->url);
 
   if (conn->proxy != NULL) {
-    conn->tos = HTTP_PROXY;
-    read_client_http_proxy(conn);
+    if (conn->proxy->type == HTTP) {
+      conn->tos = HTTP_PROXY;
+      read_client_http_proxy(conn);
+    }
+    else if (conn->proxy->type == SOCKS) {
+      conn->tos = SOCKS_PROXY;
+      read_client_socks_handshake(conn);
+    }
   }
   else {
     conn->tos = DIRECT;

@@ -13,7 +13,7 @@
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with Foobar.  If not, see <http://www.gnu.org/licenses/>.
+  along with Proxior.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
@@ -35,7 +35,11 @@ struct parsed_url *simple_parse_url(char *ori_url) {
 
   strtok(ret->url, "//");
   domain = strtok(NULL, "/");
+
+  if (domain == NULL) domain = ret->url;
+
   domain = strtok(domain, ":");
+
   s_port = strtok(NULL, "");
   if (s_port == NULL) ret->port = 80;
   else ret->port = atoi(s_port);

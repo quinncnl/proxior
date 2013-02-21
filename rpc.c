@@ -95,6 +95,8 @@ query(struct evbuffer *rsps, char *url)
 
   char *domain = get_domain(url);
 
+  if (domain == NULL) return;
+
   while (node != NULL) {
       
     struct hashmap_s *map = node->data;
@@ -176,14 +178,18 @@ handle_request(void *ctx) {
       char *list = evhttp_decode_uri(evhttp_find_header(&kvc, "list"));
       char *rule = evhttp_decode_uri(evhttp_find_header(&kvc, "rule"));
 
-      if (strcmp(path, "/addrule") == 0) 
-	update_rule(list, rule);
+      if (get_domain(rule) == NULL) 
+	evbuffer_add_printf(rsps, "Invalid rule.");
+      
+      else {
+	if (strcmp(path, "/addrule") == 0)
+	  update_rule(list, rule);
+      
+	else 
+	  remove_rule(list, rule);
 
-      else 
-	remove_rule(list, rule);
-
-      evbuffer_add_printf(rsps, "OK");
-
+	evbuffer_add_printf(rsps, "OK");
+      }
       free(list);
       free(rule);
     }

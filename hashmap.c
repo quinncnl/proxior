@@ -75,6 +75,8 @@ hashmap_insert (hashmap_t map, char *rule)
 
 	char *key = get_domain(rule);
 
+	if (key == NULL) return -1;
+
         hash = hashfunc (key, map->size);
 
         key_copy = strdup (key);
@@ -147,7 +149,7 @@ hashmap_remove (hashmap_t map, const char *rule)
   struct hashentry_s *it, *next;
   char *domain = get_domain(rule);
 
-  if (map->size == 0) return;
+  if (map->size == 0 || domain == NULL) return;
 
   unsigned int hash = hashfunc (domain, map->size);
 
