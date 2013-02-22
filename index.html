@@ -19,7 +19,7 @@
           <a id="forkme_banner" href="https://github.com/strongwillow/proxior">View on GitHub</a>
 
           <h1 id="project_title">Proxior</h1>
-          <h2 id="project_tagline">A proxy manager proxy server</h2>
+          <h2 id="project_tagline">A lightweight proxy manager proxy server</h2>
 
             <section id="downloads">
               <a class="zip_download_link" href="https://github.com/strongwillow/proxior/zipball/master">Download this project as a .zip file</a>
@@ -36,28 +36,93 @@
 <p>Proxior is a proxy manager server, and can be seen as a proxy
       router. It works like SwitchySharp and PAC(Proxy
       auto-config). However, SwitchySharp works only with Chrome
-      Desktop and PAC requires Javascript engine. These limits disable their
-      usage on mobile devices. Proxior come out as a sollution.</p>
+      Desktop while PAC requires a cumbersome Javascript engine. These limits restrict their
+      usage on mobile devices. Proxior comes out as a sollution.</p>
 
-<p>Proxior是一个管理代理的HTTP代理服务器，可被视为一个HTTP层的代理路由
-      器。它的工作原理与 SwitchySharp 和 PAC(代理自动配置)相似。但
+<p>Proxior是一个管理代理服务器的HTTP(S)代理服务器，可被视为一个HTTP层的路由
+      器。它的工作方式与 SwitchySharp 和 PAC(代理自动配置)相似。但
       SwitchySharp 只能在Chrome桌面版使用，PAC需要Javascript解释器。这
       些局限使其无法在移动设备上使用。Proxior成为一种解决方法。</p>
 
 <h3>Features</h3>
 
-<p><li>Single thread; consumes supper little memory and CPU.</li>
+<p><li>Single thread; consumes super little memory and CPU.</li>
 <li>Manage multiple proxy profiles and URL lists.</li>
+<li>Supports HTTP and Socks5 proxy.</li>
 <li>Supports Ubuntu, Mac and possibly other *nix distributions.</li></p>
 
 <h3>Remote Control</h3>
 <p>
-You can manage lists and check log online. It is simple static
-HTMLs.</p>
+You can manage lists and check log online. </p>
 <p>
-你可以在线管理列表，它是静态HTML文件，可以管理本地和远程的Proxior.</p>
-<p><a href="http://strongwillow.github.com/proxior/control/">http://strongwillow.github.com/proxior/control/</a></p>
+你可以在线管理本地和远程的Proxior.</p>
 
+<p><a href="http://strongwillow.github.com/proxior.control/">http://strongwillow.github.com/proxior.control/</a></p>
+
+
+<h3>安装与使用</h3>
+需要 libevent2<br />
+在Ubuntu 12.04和OSX 10.8测试通过<br />
+在Ubuntu下， 进入程序目录 <br />
+<pre>#安装libevent
+sudo apt-get install libevent-dev
+make
+#测试运行
+./run
+#安装
+make install
+#反安装
+make uninstall</pre>
+
+<h3>配置</h3>
+用./run运行配置在代码目录，安装后用proxior运行时配置目录在/etc/proxior
+
+<h4>proxy PROXYNAME PROXYIP:PROXYPORT</h4>
+添加一个名为 PROXYNAME 的HTTP代理， 代理地址为 PROXYIP:PROXYPORT<br />
+<h4>socks5 PROXYNAME PROXYIP:PROXYPORT</h4>
+添加一个名为 PROXYNAME 的SOCKS5代理(可用ssh -D取得，不支持身份认证)，
+代理地址为 PROXYIP:PROXYPORT<br />
+<h4>acl PROXYNAME LIST_FILENAME</h4>
+添加一个名为 LIST_FILENAME 的规则列表，它与proxy.conf同目录，满足这个
+规则表的请求用PROXYNAME这个代理访问<br />
+<em>优先级:</em>若一个URL满足多个列表，则使用第一个满足的列表
+<h4>acl-default PROXYNAME</h4>
+不在列表的请求用 PROXYNAME 访问
+<h4>acl-try PROXYNAME</h4>
+如果连接失败，如重置等，尝试使用 PROXYNAME 连接
+<h4>timeout TIME</h4>
+与服务器连接的超时时间
+<h4>listen HOST:PORT</h4>
+在 HOST:PORT 建立HTTP代理
+
+<h4>示例配置</h4>
+<pre>
+proxy SSH 192.168.0.3:8123
+proxy GAE 192.168.0.3:8087
+proxy Squid 192.168.0.3:3128
+socks5 dxt localhost:7070
+
+#此处的<em>优先级:</em> directlist > gaelist > dxtlist > sshlist
+acl direct directlist
+acl GAE gaelist
+acl dxt dxtlist
+acl SSH sshlist
+
+acl-default direct
+acl-try SSH
+
+timeout 30
+listen 0.0.0.0:9999
+</pre>
+
+<h3>Tips</h3>
+<ol>
+  <li>Ubuntu下使用Upstart建立SSH隧道，可设置为连接中断或程序终止后自动重连</li>
+  <li>先用./run看看程序的工作情况，再用proxior -d以守护进程运行</li>
+  <li>几乎所有常用操作系统(Windows, OSX, Ubuntu, iOS, Android等)都可以
+  使用HTTP代理</li>
+
+</ol>
       </section>
     </div>
 
