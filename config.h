@@ -19,8 +19,7 @@ struct proxy_t {
 };
 
 struct proxylist {
-  struct proxy_t *data;
-  int count;
+  struct proxy_t *head;
 };
 
 struct acl {
@@ -31,8 +30,8 @@ struct acl {
 };
 
 struct acllist {
-  struct acl *data;
-  int count;
+  struct acl *head;
+  struct acl *tail;
 };
 
 typedef struct {

@@ -27,7 +27,7 @@ struct proxy_t *
 match_list(char *url) {
 
   struct acllist *al = config->acl_h;
-  struct acl *node = al->data;
+  struct acl *node = al->head;
 
   char *domain = get_domain(url);
 

@@ -82,5 +82,8 @@ int get_line_count(FILE *fh) {
   int lines = 0;
   while (EOF != (fscanf(fh, "%*[^\n]"), fscanf(fh, "%*c"))) 
     ++lines;
+
+  rewind(fh);
+
   return lines;
 }

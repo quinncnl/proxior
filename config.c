@@ -30,21 +30,21 @@ static void
 add_proxy(struct proxylist *pl, char *name, char *ap, unsigned char type) 
 {
   struct proxy_t *proxy = malloc(sizeof(struct proxy_t));
-  proxy->next = pl->data;
+
   strcpy(proxy->name, name);
   strcpy(proxy->host, strtok(ap, ":"));
   proxy->port = atoi(strtok(NULL, ""));
 
   proxy->type = type;
+  proxy->next = pl->head;
+  pl->head = proxy;
 
-  pl->data = proxy;
-  pl->count++;
 }
 
 static struct proxy_t *
 find_proxy(char *proxy_name) {
   struct proxylist *proxy = config->proxy_h;
-  struct proxy_t *node = proxy->data;
+  struct proxy_t *node = proxy->head;
   do {
     if(strcmp(node->name, proxy_name) == 0)
       return node;
@@ -80,12 +80,11 @@ add_acl(struct acllist *al, char *proxy_name, char *list) {
 
   struct hashmap_s *map = hashmap_create(lines * 1.2);
 
-  rewind(fh);
-
   while (fgets(buf, 200, fh)) {
+    // '\n' included
     int len = strlen(buf) - 1;
 
-    if (len == -1) break;
+    if (len == 0) break;
 
     if(buf[len] == '\n') 
       buf[len] = 0;
@@ -98,9 +97,13 @@ add_acl(struct acllist *al, char *proxy_name, char *list) {
   acl->name = strdup(list);
   acl->proxy = find_proxy(proxy_name);
   acl->data = map;
-  acl->next = al->data;
-  al->data = acl;
-  al->count++;
+  if (al->head == NULL)
+    al->head = acl;
+  else 
+    al->tail->next = acl;
+
+  acl->next = NULL;
+  al->tail = acl;
 }
 
 static void 
@@ -145,10 +148,8 @@ void load_config(char path[]) {
     exit(1);
   }
 
-  struct proxylist *plist = malloc(sizeof(struct proxylist));
-  struct acllist *alist = malloc(sizeof(struct acllist));
-  plist->data = NULL;
-  alist->data = NULL;
+  struct proxylist *plist = calloc(sizeof(struct proxylist), 1);
+  struct acllist *alist = calloc(sizeof(struct acllist), 1);
 
   config->proxy_h = plist;
   config->acl_h = alist;
@@ -190,7 +191,7 @@ void update_rule(char *list, char *rule)
 
   /* Remove existing rule */
 
-  struct acl *it = config->acl_h->data;
+  struct acl *it = config->acl_h->head;
 
   while (it != NULL) {
 
@@ -206,7 +207,7 @@ void update_rule(char *list, char *rule)
 
 void remove_rule(char *list, char *rule) 
 {
-  struct acl *it = config->acl_h->data;
+  struct acl *it = config->acl_h->head;
 
   while (it != NULL) {
 
@@ -229,7 +230,7 @@ char *get_file_path(char *filename)
 
 void flush_list() 
 {
-  struct acl *acl = config->acl_h->data;
+  struct acl *acl = config->acl_h->head;
   struct hashmap_s *map;
   FILE *fd;
   struct hashentry_s *it;

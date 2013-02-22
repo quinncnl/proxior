@@ -36,7 +36,7 @@
 
 static void 
 get_proxies(struct evbuffer *rsps) {
-  struct proxy_t *it = config->proxy_h->data;
+  struct proxy_t *it = config->proxy_h->head;
   
   while (it != NULL) {
     evbuffer_add_printf(rsps, "%s,%s:%d\n", it->name, it->host, it->port);
@@ -46,7 +46,7 @@ get_proxies(struct evbuffer *rsps) {
 
 static void
 get_lists(struct evbuffer *rsps) {
-  struct acl *it = config->acl_h->data;
+  struct acl *it = config->acl_h->head;
   
   while (it != NULL) {
     evbuffer_add_printf(rsps, "%s,%s\n", it->name, it->proxy->name);
@@ -67,7 +67,6 @@ get_log(struct evbuffer *rsps) {
   if (start < 0) start = 0;
 
   int i; char buf[MAX_URL_LEN];
-  rewind(fd);
 
   for (i = 0; i < start; i++) 
     fgets(buf, MAX_URL_LEN, fd);
@@ -91,7 +90,7 @@ static void
 query(struct evbuffer *rsps, char *url) 
 {
   struct acllist *al = config->acl_h;
-  struct acl *node = al->data;
+  struct acl *node = al->head;
 
   char *domain = get_domain(url);
 
