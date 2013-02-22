@@ -27,7 +27,8 @@
 #include <arpa/inet.h>
 
 static void
-add_proxy(struct proxylist *pl, char *name, char *ap, unsigned char type) {
+add_proxy(struct proxylist *pl, char *name, char *ap, unsigned char type) 
+{
   struct proxy_t *proxy = malloc(sizeof(struct proxy_t));
   proxy->next = pl->data;
   strcpy(proxy->name, name);
@@ -53,7 +54,10 @@ find_proxy(char *proxy_name) {
   if (strcmp(proxy_name, "direct") == 0)
     return NULL;
 
-  return NULL;
+  fprintf(stderr, "Cannot find proxy '%s'. Exiting\n", proxy_name);
+
+  exit(1);
+
 }
 
 static void
@@ -171,6 +175,9 @@ void load_config(char path[]) {
       set_timeout(word2);
     else if (strcmp(word1, "listen") == 0)
       set_listen(word2);
+    else {
+      fprintf(stderr, "Invalid command %s. Ignored.\n", word1);
+    }
   }
   fclose(fd);
 

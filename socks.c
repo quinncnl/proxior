@@ -42,7 +42,7 @@ socks_read(struct bufferevent *bev, void *ptr) {
     if (hs1[0] != 0x05 || hs1[1] != 0x00) 
       return ;
 
-    unsigned char req[6+256];
+    unsigned char req[6 + 256];
 
     req[0] = 0x05;
     req[1] = 0x01;
@@ -79,9 +79,6 @@ socks_read(struct bufferevent *bev, void *ptr) {
     bufferevent_setcb(bev, read_server, NULL, server_event, ctx->ctx);
 
     bufferevent_enable(bev, EV_READ|EV_WRITE);
-
-    conn_t *conn = ctx->ctx;
-    conn->headline = 1;
 
     (*(ctx->callback))(ctx->ctx);
 

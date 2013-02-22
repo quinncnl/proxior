@@ -26,14 +26,11 @@ typedef struct conn
   /* proxy to use, NULL for direct */
   struct proxy_t *proxy;
 
-  /* response headline */
-  short headline;
+  /* Not Response Headline */
+  short nheadline;
 
   // For CONNECT method
   short handshaked;
-
-  /* When connected to a new host via socks5, if there is data not sent yet, send it */
-  short not_sent_yet;
 
   /*  track current http state */
   struct state *state; 

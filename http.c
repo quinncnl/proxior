@@ -47,7 +47,7 @@ error_msg(struct evbuffer *output, char *msg) {
   size_t size = strlen(msg);
 
   evbuffer_add_printf(output,
-		      "HTTP/1.1 200 OK\r\n"
+		      "HTTP/1.1 502 Bad Gateway\r\n"
 		      "Content-Type: text/html\r\n"
 		      "Access-Control-Allow-Origin: *\r\n"
 		      "Connection: close\r\n"
@@ -66,7 +66,7 @@ read_server(struct bufferevent *bev, void *ctx) {
   char version[10];
   int code;
   
-  if (conn->headline) {
+  if (conn->nheadline == 0) {
     char buf[64];
 
     evbuffer_copyout(bufferevent_get_input(bev), buf, 64);
@@ -79,7 +79,7 @@ read_server(struct bufferevent *bev, void *ctx) {
     if (code == 502)
       log_error(502, "Bad gateway.", conn->url, conn->proxy);
 
-    conn->headline = 0;
+    conn->nheadline = 1;
   }
 
   if (bufferevent_read_buffer(bev, bufferevent_get_output(bev_client))) 
@@ -116,10 +116,9 @@ free_conn(conn_t *conn) {
 void 
 server_event(struct bufferevent *bev, short e, void *ptr) {
   conn_t *conn = ptr;
-  // perror("SERVER EVENT");
+
   if (e & BEV_EVENT_CONNECTED) {
     
-    conn->headline = 1;
     bufferevent_set_timeouts(bev, &config->timeout, &config->timeout);
     bufferevent_setcb(bev, read_server, NULL, server_event, conn);
     bufferevent_enable(bev, EV_READ|EV_WRITE);
@@ -317,7 +316,6 @@ read_direct_http(void *ctx) {
     bufferevent_free(conn->be_server);
     conn->be_server = NULL;
 
-    conn->not_sent_yet = 1;
     read_client_socks_handshake(conn);
     
     return 1;
@@ -349,7 +347,6 @@ read_direct_http(void *ctx) {
     free(cont); 
   }
 
-  conn->not_sent_yet = 0;
   return 0;
 }
 
@@ -409,9 +406,7 @@ read_client_direct(void *ctx) {
       http_ready_cb(read_direct_https_handshake, ctx);
   }
   else {
-    if (conn->not_sent_yet)
-      read_direct_http(ctx);
-    else
+
       http_ready_cb(read_direct_http, ctx);
   }
 }
