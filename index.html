@@ -19,7 +19,7 @@
           <a id="forkme_banner" href="https://github.com/strongwillow/proxior">View on GitHub</a>
 
           <h1 id="project_title">Proxior</h1>
-          <h2 id="project_tagline">A lightweight proxy manager proxy server</h2>
+          <h2 id="project_tagline">A lightweight proxy management proxy server</h2>
 
             <section id="downloads">
               <a class="zip_download_link" href="https://github.com/strongwillow/proxior/zipball/master">Download this project as a .zip file</a>
@@ -59,8 +59,10 @@ You can manage lists and check log online. </p>
 
 <p><a href="http://strongwillow.github.com/proxior.control/">http://strongwillow.github.com/proxior.control/</a></p>
 
+<h3>编译版下载</h3>
+<a href="http://code.google.com/p/proxior/downloads/list">http://code.google.com/p/proxior/downloads/list</a>
 
-<h3>安装与使用</h3>
+<h3>从源码安装与使用</h3>
 需要 libevent2<br />
 在Ubuntu 12.04和OSX 10.8测试通过<br />
 在Ubuntu下， 进入程序目录 <br />
@@ -74,8 +76,10 @@ make install
 #反安装
 make uninstall</pre>
 
-<h3>配置</h3>
-用./run运行配置在代码目录，安装后用proxior运行时配置目录在/etc/proxior
+<h3>运行与配置</h3>
+Linux下用./run运行，配置在源代码目录，make install后用proxior运行，配
+置目录在/etc/proxior。<br />
+Windows下双击run.bat。
 
 <h4>proxy PROXYNAME PROXYIP:PROXYPORT</h4>
 添加一个名为 PROXYNAME 的HTTP代理， 代理地址为 PROXYIP:PROXYPORT<br />
