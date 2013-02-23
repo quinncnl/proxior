@@ -1,9 +1,10 @@
 PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
 
+#G=-g
 CC=gcc
-CFLAGS=-c -Wall -g
-LDFLAGS=-levent -g
+CFLAGS=-c -Wall $(G)
+LDFLAGS=-levent $(G)
 SOURCES=config.c http.c logging.c match.c util.c main.c rpc.c hashmap.c socks.c
 OBJECTS=$(SOURCES:.c=.o)
 EXECUTABLE=proxior
