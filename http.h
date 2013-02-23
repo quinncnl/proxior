@@ -48,6 +48,7 @@ struct state {
   struct evbuffer *header;
   struct evbuffer *header_b; // for trying on failure
   struct evbuffer *cont;
+  struct evbuffer *cont_b;
 };
 
 void

@@ -3,7 +3,7 @@
 
 #include "common.h"
 
-void rpc( void *ctx );
+void rpc(struct bufferevent *, void *);
 
 #endif /* _RPC_H_ */
 

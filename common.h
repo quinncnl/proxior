@@ -10,6 +10,13 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include <errno.h>
+#include <event2/util.h>
+#include <event2/event.h>
+#include <stdarg.h>
+
+#include <arpa/inet.h>
+
 /* We need one event base */
 struct event_base *base;
 

@@ -78,7 +78,7 @@ add_acl(struct acllist *al, char *proxy_name, char *list) {
 
   printf("Rules in %s: %d\n", list, lines);
 
-  struct hashmap_s *map = hashmap_create(lines * 1.2);
+  struct hashmap_s *map = hashmap_create(lines * 1.2 + 15);
 
   while (fgets(buf, 200, fh)) {
     // '\n' included

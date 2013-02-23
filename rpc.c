@@ -17,6 +17,7 @@
 
 */
 
+#include "common.h"
 #include <event2/http.h>
 #include <event2/event.h>
 #include <event.h>
@@ -209,7 +210,7 @@ handle_request(void *ctx) {
 }
 
 
-void rpc(void *ctx) {
+void rpc(struct bufferevent*bev, void *ctx) {
 
   http_ready_cb(handle_request, ctx);
 

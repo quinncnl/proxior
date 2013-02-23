@@ -25,21 +25,21 @@
 #include "rpc.h"
 #include "common.h"
 #include "socks.h"
-#include <errno.h>
-#include <event2/util.h>
-#include <event2/event.h>
-#include <stdarg.h>
-#include <arpa/inet.h>
-
 
 static void
-read_client_http_proxy(void *ptr);
+read_client_http_proxy_handshake(void *);
 
 static int 
-read_direct_http(void *ctx);
+read_direct_http(void *);
 
 static void
-read_client_direct(void *ctx) ;
+read_client_direct(void *) ;
+
+static void
+client_event(struct bufferevent *, short, void *);
+
+static void
+init_remote_conn(conn_t *);
 
 static void
 error_msg(struct evbuffer *output, char *msg) {
@@ -97,7 +97,10 @@ free_conn(conn_t *conn) {
     
     if (conn->state->header) {
       evbuffer_free(conn->state->header);  
-      evbuffer_free(conn->state->header_b);  
+      evbuffer_free(conn->state->header_b);
+
+      if (conn->state->cont_b) 
+	evbuffer_free(conn->state->cont_b);   
     }
 
     free(conn->state);
@@ -109,6 +112,24 @@ free_conn(conn_t *conn) {
   
   if (conn->purl) free_parsed_url(conn->purl); 
   free(conn);
+}
+
+static void
+set_conn_proxy(conn_t *conn, struct proxy_t *proxy) {
+
+  conn->proxy = proxy;
+  if (proxy == NULL) {
+    conn->tos = DIRECT;
+    return ;
+  }
+
+  switch (proxy->type) {
+  case HTTP:
+    conn->tos = HTTP_PROXY;
+    break;
+  case SOCKS:
+    conn->tos = SOCKS_PROXY;
+  }
 }
 
 /* server event */
@@ -144,12 +165,16 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
       }
       else {
 	perror("Using try-proxy");
-	conn->proxy = config->try_proxy;
-	conn->tos = HTTP_PROXY;
+	
+	set_conn_proxy(conn, config->try_proxy);
 
 	bufferevent_free(conn->be_server);
+	conn->be_server = NULL;
 
-	read_client_http_proxy(conn);
+	//swap_evbuffer(conn->state->header, conn->state->header_b);
+
+	init_remote_conn(conn);
+
 	return;
       }
     }
@@ -158,6 +183,7 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
 
   }
 }
+
 
 void
 http_ready_cb(int (*callback)(void *ctx), void *ctx) {
@@ -170,6 +196,7 @@ http_ready_cb(int (*callback)(void *ctx), void *ctx) {
     s->eor = 0;
     s->header = evbuffer_new();
     s->header_b = evbuffer_new();
+    s->cont_b = evbuffer_new();
   }
 
   // header section
@@ -236,17 +263,25 @@ http_ready_cb(int (*callback)(void *ctx), void *ctx) {
   end:
   if ((*callback)(ctx)) return;
 
-  // clean up and get ready for next request
+  // Clean up and get ready for next request
+
+  evbuffer_drain(s->header_b,evbuffer_get_length(s->header_b));
+
+  struct evbuffer *tmp = s->header_b;
+  s->header_b = s->header;
+  s->header = tmp;
+
+  if (s->length) {
+    evbuffer_drain(s->cont_b,evbuffer_get_length(s->cont_b));
+    tmp = s->cont_b;
+    s->cont_b = s->cont;
+    s->cont = tmp;
+  }
+
   s->eor = 1;
   s->read = 0;
   s->length = 0;
   s->is_cont = 0;
-
-  struct evbuffer *tmp;
-  evbuffer_drain(s->header_b,evbuffer_get_length(s->header_b));
-  tmp = s->header_b;
-  s->header_b = s->header;
-  s->header = tmp;
 
 }
 
@@ -280,6 +315,8 @@ read_client_socks_handshake(void *ptr) {
 
 }
 
+/* Return 1 if data not sent */
+
 static int 
 read_direct_http(void *ctx) {
   conn_t *conn = ctx;
@@ -300,6 +337,8 @@ read_direct_http(void *ctx) {
       free_parsed_url(conn->purl);   
 
       bufferevent_free(conn->be_server);
+      conn->be_server = NULL;
+
       connect_server(url->host, url->port, conn);
 
     }
@@ -355,7 +394,7 @@ read_direct_https(void *ctx) {
   conn_t *conn = ctx;
   if (bufferevent_read_buffer(conn->be_client, bufferevent_get_output(conn->be_server)))
 
-  fputs("error reading from client", stderr);
+  fputs("Error reading from client\n", stderr);
   return 0;
 }
 
@@ -372,7 +411,8 @@ read_direct_https_handshake(void *ctx) {
   int port = atoi(strtok(NULL, ""));
 
   char *tmp;
-  // we don't really care what headers there are, just find the end of it
+
+  // We don't really care what headers there are
 
   while ((tmp = evbuffer_readln(bufferevent_get_input(conn->be_client), NULL, EVBUFFER_EOL_CRLF )) != NULL) {
     if (strlen(tmp) == 0) {
@@ -411,9 +451,10 @@ read_client_direct(void *ctx) {
   }
 }
 
+/* Connect to HTTP proxy server */
 
 static void
-read_client_http_proxy(void *ptr) {
+read_client_http_proxy_handshake(void *ptr) {
   conn_t *conn = ptr;
   struct bufferevent *bevs;
 
@@ -427,6 +468,8 @@ read_client_http_proxy(void *ptr) {
 
   if (conn->state && conn->state->header_b) {
     evbuffer_remove_buffer(conn->state->header_b, output, -1);
+    if (conn->state->cont_b) 
+      evbuffer_remove_buffer(conn->state->cont_b, output, -1);
   }
   else 
     bufferevent_read_buffer(conn->be_client, output);
@@ -443,6 +486,35 @@ read_client_http_proxy(void *ptr) {
   }
 }
 
+static void
+read_client_http_proxy(struct bufferevent *bev, void *ctx) 
+{
+  conn_t *conn = ctx;
+  if (bufferevent_read_buffer(bev, bufferevent_get_output(conn->be_server)))
+    printf("error reading from client\n");
+
+}
+
+static void
+init_remote_conn(conn_t *conn) {
+
+  if (conn->proxy != NULL) {
+    if (conn->proxy->type == HTTP) {
+
+      read_client_http_proxy_handshake(conn);
+
+      bufferevent_setcb(conn->be_client, read_client_http_proxy, NULL, client_event, conn);
+
+    }
+    else if (conn->proxy->type == SOCKS) {
+
+      read_client_socks_handshake(conn);
+    }
+  }
+  else 
+    read_client_direct(conn);
+
+}
 
 static void
 read_client(struct bufferevent *bev, void *ctx) {
@@ -450,19 +522,6 @@ read_client(struct bufferevent *bev, void *ctx) {
 
   if (conn->tos == DIRECT || conn->tos == SOCKS_PROXY) {
     read_client_direct(conn);
-    return;
-  }
-
-  if (conn->tos == HTTP_PROXY) {
-
-    if (bufferevent_read_buffer(bev, bufferevent_get_output(conn->be_server)))
-      printf("error reading from client\n");
-
-    return;
-  }
-
-  if (conn->tos == CONFIG) {
-    rpc(ctx);
     return;
   }
 
@@ -487,32 +546,23 @@ find out requested url and apply switching rules  */
   free(line);
 
   if (conn->url[0] == '/' ){
-    rpc(ctx);
+    rpc(bev, ctx);
     conn->tos = CONFIG;
-    
+
+    bufferevent_setcb(bev, rpc, NULL, client_event, conn);
     return;
   }
 
-/* Determine the connection method by the first header of a consistent connection. Note that there is a slight chance of mis-choosing here. We just ignore it here for efficiency. */
+/* Determine the connection proxy by the first
+ * header of a consistent connection. Note that 
+ * there is a slight chance of mis-choosing here. 
+ * We just ignore it here for efficiency. 
+*/
 
-  conn->proxy = match_list(conn->url);
+  set_conn_proxy(conn, match_list(conn->url));
+  init_remote_conn(conn);
 
-  if (conn->proxy != NULL) {
-    if (conn->proxy->type == HTTP) {
-      conn->tos = HTTP_PROXY;
-      read_client_http_proxy(conn);
-    }
-    else if (conn->proxy->type == SOCKS) {
-      conn->tos = SOCKS_PROXY;
-      read_client_socks_handshake(conn);
-    }
-  }
-  else {
-    conn->tos = DIRECT;
-    read_client_direct(conn);
-  }
 }
-
 
 static void 
 client_event(struct bufferevent *bev, short e, void *ptr) {
@@ -523,7 +573,6 @@ client_event(struct bufferevent *bev, short e, void *ptr) {
 
   if (e & (BEV_EVENT_ERROR|BEV_EVENT_EOF|BEV_EVENT_TIMEOUT)){
 
-      // close connection
       free_conn(conn);
     }
 }
