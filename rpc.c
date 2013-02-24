@@ -33,8 +33,6 @@
 #include "config.h"
 #include "http.h"
 
-
-
 static void 
 get_proxies(struct evbuffer *rsps) {
   struct proxy_t *it = config->proxy_h->head;

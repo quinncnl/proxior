@@ -3,7 +3,8 @@ BINDIR = $(PREFIX)/bin
 
 #G=-g
 CC=gcc
-CFLAGS=-c -Wall $(G)
+#WALL=-Wall
+CFLAGS=-c $(WALL) $(G)
 LDFLAGS=-levent $(G)
 SOURCES=config.c http.c logging.c match.c util.c main.c rpc.c hashmap.c socks.c
 OBJECTS=$(SOURCES:.c=.o)

@@ -157,11 +157,20 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
 
      
       if (conn->proxy == config->try_proxy) {
-	char msg[50] =  "There is an error connecting to proxy ";
-	strcat(msg, conn->proxy->name);
-	puts(msg);
-	error_msg(bufferevent_get_output(conn->be_client), msg);
-	return;
+	if (config->try_proxy != NULL) {
+	  char msg1[50] =  "Error connecting to proxy ";
+	  strcat(msg1, conn->proxy->name);
+	  puts(msg1);
+	  error_msg(bufferevent_get_output(conn->be_client), msg1);
+	  return;
+
+	}
+	else {
+
+	  error_msg(bufferevent_get_output(conn->be_client), "No try-proxy set. Direct connection failed. Check log.");
+	  return;
+	}
+
       }
       else {
 	perror("Using try-proxy");
