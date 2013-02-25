@@ -18,4 +18,6 @@ char *get_domain(const char *url);
 
 int get_line_count(FILE *fh) ;
 
+int astermatch (char *url, char *pattern);
+
 #endif /* _UTIL_H_ */

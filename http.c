@@ -377,22 +377,22 @@ read_direct_http(void *ctx) {
 
   evbuffer_add_printf(output, "%s %s %s\r\n", conn->method, pos, conn->version);
 
-  int header_s = evbuffer_get_length(conn->state->header);
+/* Need to keep a copy of HTTP request in case connection be reset. */
 
-  char *header = malloc(header_s);
+  unsigned char *tosend;
+  tosend = evbuffer_pullup(conn->state->header, -1);
 
-  evbuffer_copyout(conn->state->header, header, header_s);
+  int tosend_s = evbuffer_get_length(conn->state->header);
 
-  evbuffer_add(output, header, header_s);
-  free(header);
+  evbuffer_add(output, tosend, tosend_s);
 
   if (conn->state->length) {
-    char *cont = malloc(conn->state->length);
+ 
+    tosend = evbuffer_pullup(conn->state->cont, -1);
   
-    evbuffer_copyout(conn->state->cont, cont, conn->state->length);
+    tosend_s = evbuffer_get_length(conn->state->cont);
 
-    evbuffer_add(output, cont, conn->state->length);
-    free(cont); 
+    evbuffer_add(output, tosend, tosend_s);
   }
 
   return 0;
@@ -534,17 +534,18 @@ read_client(struct bufferevent *bev, void *ctx) {
     return;
   }
 
-  /* the first time talk to client
-find out requested url and apply switching rules  */
+  /* The first time talking to a client.
+     Find out requested url and apply switching rules  */
 
   char *line;
-  line = evbuffer_readln(bufferevent_get_input(bev), NULL, EVBUFFER_EOL_ANY);
+  line = evbuffer_readln(bufferevent_get_input(bev), NULL, EVBUFFER_EOL_CRLF);
 
   if (line == NULL) return;
 
   if (strlen(line) > MAX_URL_LEN) {
     free(line);
     free_conn(conn);
+    fprintf(stderr, "URL TOO LONG.");
     return;
   }
 

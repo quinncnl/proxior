@@ -87,3 +87,38 @@ int get_line_count(FILE *fh) {
 
   return lines;
 }
+
+/* Written on Mon Feb 25 2013
+ * Replace of fnmatch
+ */
+
+int astermatch (char *url, char *pattern) {
+
+  char *u = url, *p = pattern;
+
+  if (!*p) return 0;
+  while (*p) {
+
+    if (*p == '*') {
+      if (!*u && !*(p + 1)) return 0;
+
+      while (*u) 
+	if (astermatch(u, p + 1))
+	  u++;
+	else return 0;
+
+      return 1;
+    }
+    else {
+      if (*u && *p == *u) {
+	p++;
+	u++;
+      }
+      else return 1;
+    }
+  }
+
+  if (*p == *u) return 0;
+  return 1;
+
+}

@@ -18,7 +18,6 @@
 */
 
 #include "match.h"
-#include <fnmatch.h>
 #include <string.h>
 #include "config.h"
 #include "util.h"
@@ -48,7 +47,7 @@ match_list(char *url) {
       printf("matching: %s\n", it->data);
 
       if (strcasestr(url, it->data) != NULL 
-	  || fnmatch(it->data, url, FNM_CASEFOLD) == 0) 
+	  || astermatch(url, it->data) == 0) 
 
 	return node->proxy;
 
