@@ -145,7 +145,7 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
     bufferevent_enable(bev, EV_READ|EV_WRITE);
     
   }
-  else if (e & (BEV_EVENT_ERROR|BEV_EVENT_TIMEOUT)) {
+  else if (e & (BEV_EVENT_ERROR|BEV_EVENT_EOF|BEV_EVENT_TIMEOUT)) {
 
     if (e & BEV_EVENT_ERROR) {
 
@@ -186,7 +186,7 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
 
 	return;
       }
-    }
+    }//error
 
     free_conn(conn);
 
@@ -251,8 +251,6 @@ http_ready_cb(int (*callback)(void *ctx), void *ctx) {
 
       if (strcmp(header, "Proxy-Connection:")) 
 	evbuffer_add_printf(s->header, "%s\r\n", line);
-if (strcmp(header, "Proxy-Connection:")) 
-  evbuffer_add_printf(s->header, "%s\r\n", line);
 
       free(line);
     } // while

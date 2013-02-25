@@ -19,7 +19,7 @@ int main(int argc, char *argv[])
   int c, daemon = 0;
   char path[50] = "/etc/proxior/";
 
-  signal(SIGPIPE, SIG_IGN);
+  //signal(SIGPIPE, SIG_IGN);
 
   while ((c = getopt(argc, argv, "dp:")) != -1) {
     switch (c) {
