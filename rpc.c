@@ -19,14 +19,7 @@
 
 #include "common.h"
 #include <event2/http.h>
-#include <event2/event.h>
 #include <event.h>
-#include <sys/queue.h>
-#include <fnmatch.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <fcntl.h>
 
 #include "util.h"
 #include "rpc.h"
@@ -102,8 +95,8 @@ query(struct evbuffer *rsps, char *url)
     struct hashentry_s *it = hashmap_find_head(map, domain);
 
     while (it != NULL) {
-      if (strcasestr(url, it->data) != NULL 
-	  || fnmatch(it->data, url, FNM_CASEFOLD) == 0) 
+      if (strstr(url, it->data) != NULL 
+	  || astermatch(url, it->data) == 0) 
 
 	evbuffer_add_printf(rsps, "%s|%s\n", node->name, it->data);
 

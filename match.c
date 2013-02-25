@@ -46,7 +46,7 @@ match_list(char *url) {
     while (it != NULL) {
       printf("matching: %s\n", it->data);
 
-      if (strcasestr(url, it->data) != NULL 
+      if (strstr(url, it->data) != NULL 
 	  || astermatch(url, it->data) == 0) 
 
 	return node->proxy;
