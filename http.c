@@ -41,7 +41,7 @@ client_event(struct bufferevent *, short, void *);
 static void
 init_remote_conn(conn_t *);
 
-static void
+void
 error_msg(struct evbuffer *output, char *msg) {
 
   size_t size = strlen(msg);
@@ -133,18 +133,27 @@ set_conn_proxy(conn_t *conn, struct proxy_t *proxy) {
   }
 }
 
+void server_connected(conn_t *conn) 
+{
+  conn->server_eof = 0;
+
+  bufferevent_set_timeouts(conn->be_server, &config->timeout, &config->timeout);
+
+  bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
+
+  bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
+}
+
 /* server event */
 
 void 
-server_event(struct bufferevent *bev, short e, void *ptr) {
+server_event(struct bufferevent *bev, short e, void *ptr) 
+{
   conn_t *conn = ptr;
 
   if (e & BEV_EVENT_CONNECTED) {
 
-    conn->server_eof = 0;
-    bufferevent_set_timeouts(bev, &config->timeout, &config->timeout);
-    bufferevent_setcb(bev, read_server, NULL, server_event, conn);
-    bufferevent_enable(bev, EV_READ|EV_WRITE);
+    server_connected (conn);
     
   }
   else if (e & BEV_EVENT_EOF) {
@@ -380,6 +389,8 @@ read_direct_http(void *ctx) {
     
     return 1;
   }
+
+  if (conn->server_eof) return 0;
 
   struct evbuffer *output = bufferevent_get_output(conn->be_server);
 

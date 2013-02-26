@@ -64,6 +64,11 @@ read_server(struct bufferevent *bev, void *ctx);
 void 
 server_event(struct bufferevent *bev, short e, void *ptr);
 
+void
+error_msg(struct evbuffer *output, char *msg);
+
+void server_connected(conn_t *conn) ;
+
 void start();
 
 #endif /* _HTTP_H_ */

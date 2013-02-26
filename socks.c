@@ -24,9 +24,21 @@
 static void 
 socks_event(struct bufferevent *bev, short e, void *ptr) 
 {
+  conn_t *conn = ((struct socksctx *)ptr)->ctx;
+
   if (e & (BEV_EVENT_ERROR|BEV_EVENT_EOF|BEV_EVENT_TIMEOUT)) {
+
+    if (e & BEV_EVENT_ERROR) {
+      int code = evutil_socket_geterror(bufferevent_getfd(conn->be_server)); 
+
+      fprintf(stderr, "Error connecting to socks server: %s\n", evutil_socket_error_to_string(code));
+
+      error_msg(bufferevent_get_output(conn->be_client), "Error connecting to socks server.");
+      return;
+    }
+
     bufferevent_free(bev);
-    conn_t *conn = ((struct socksctx *)ptr)->ctx;
+    
     conn->be_server = NULL;
   }
 }
@@ -54,9 +66,6 @@ socks_read(struct bufferevent *bev, void *ptr) {
 
     unsigned short netport =  htons(ctx->port);
     memcpy(&req[5 + req[4]], &netport, 2);
-    /* int i = 0; */
-    /* for (; i< 7 + req[4]; i++) */
-    /*   printf("%d\n", req[i]); */
 
     bufferevent_write(bev, req, 7 + req[4]);
 
@@ -66,21 +75,20 @@ socks_read(struct bufferevent *bev, void *ptr) {
   else if (ctx->phase == 1) {
 
     char hs2[2];
+    conn_t * conn = ctx->ctx;
+
     bufferevent_read(bev, hs2, 2);
 
     if (hs2[1]) {
-      puts("Cannot connect to socks server");
+      error_msg(bufferevent_get_output(conn->be_client), "Cannot connect to socks server");
       return;
     }
 
     struct evbuffer *rep = bufferevent_get_input(bev);
     evbuffer_drain(rep, evbuffer_get_length(rep));
 
-    bufferevent_setcb(bev, read_server, NULL, server_event, ctx->ctx);
+    server_connected(conn);
 
-    bufferevent_enable(bev, EV_READ|EV_WRITE);
-
-    conn_t * conn = ctx->ctx;
     struct evbuffer *output;
     if (conn->state && conn->state->header_b) {
       output = bufferevent_get_output(bev);
@@ -99,7 +107,6 @@ socks_read(struct bufferevent *bev, void *ptr) {
 }
 
 struct bufferevent * 
-//socks_connect(char *host, unsigned short port, void (*callback)(void (*)(void *), void *), void (*cbcb)(void *), void *conn) 
 socks_connect(char *host, unsigned short port, void (*callback)(void *), void *ptr) 
 {
 
