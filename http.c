@@ -41,6 +41,9 @@ client_event(struct bufferevent *, short, void *);
 static void
 init_remote_conn(conn_t *);
 
+static int
+check_http_method(conn_t *conn) ;
+
 void
 error_msg(struct evbuffer *output, char *msg) {
 
@@ -88,6 +91,7 @@ read_server(struct bufferevent *bev, void *ctx) {
 
 }
 
+/* Close both client and server connection. */
 
 static void
 free_conn(conn_t *conn) {
@@ -158,7 +162,6 @@ server_event(struct bufferevent *bev, short e, void *ptr)
   }
   else if (e & BEV_EVENT_EOF) {
 
-    puts("SERVER EOF");
     bufferevent_free(conn->be_server);
     conn->be_server = NULL;
     conn->server_eof = 1;
@@ -198,8 +201,6 @@ server_event(struct bufferevent *bev, short e, void *ptr)
 
 	bufferevent_free(conn->be_server);
 	conn->be_server = NULL;
-
-	//swap_evbuffer(conn->state->header, conn->state->header_b);
 
 	init_remote_conn(conn);
 
@@ -246,11 +247,18 @@ http_ready_cb(int (*callback)(void *ctx), void *ctx) {
 
       sscanf(line, "%s %s %s", conn->method, conn->url, conn->version);
 
+      if (check_http_method(conn)) return; 
+
       // Don't store request line(first line) in header.
 
       printf("CC: %s %s\n", conn->method, conn->url);
       free(line);
+
       s->eor = 0;
+
+      set_conn_proxy(conn, match_list(conn->url));
+      init_remote_conn(conn);
+      return;
     }
 
     // find content length
@@ -258,7 +266,7 @@ http_ready_cb(int (*callback)(void *ctx), void *ctx) {
 
       if (strlen(line) == 0) {   
 	evbuffer_add_printf(s->header, "\r\n");
-	puts("request end");
+
 	free(line);
 	s->is_cont = 1;
 	break;
@@ -359,11 +367,10 @@ read_direct_http(void *ctx) {
     
     if (conn->be_server == NULL) {
       connect_server(url->host, url->port, conn);
-      puts("init conn to server");
+
     }
     else if (strcmp(conn->purl->host, url->host) || conn->purl->port != url->port) {
 
-      puts("another host");
       free_parsed_url(conn->purl);   
 
       bufferevent_free(conn->be_server);
@@ -402,19 +409,15 @@ read_direct_http(void *ctx) {
 
   /* Need to keep a copy of HTTP request in case connection be reset. */
 
-  unsigned char *tosend;
-  tosend = evbuffer_pullup(conn->state->header, -1);
   int size = evbuffer_get_length(conn->state->header);
-  evbuffer_add(output, tosend, size);
 
-  // bufferevent_write_buffer(conn->be_server, conn->state->header);
+  bufferevent_write_buffer(conn->be_server, conn->state->header);
 
   if (conn->state->length) {
 
-    tosend = evbuffer_pullup(conn->state->cont, -1);
     size = evbuffer_get_length(conn->state->cont);
 
-    evbuffer_add(output, tosend, size);
+    bufferevent_write_buffer(conn->be_server, conn->state->cont);
   }
 
   return 0;
@@ -546,6 +549,26 @@ init_remote_conn(conn_t *conn) {
 
 }
 
+static int
+check_http_method(conn_t *conn) {
+  static const char *valid_method[] = {
+    "GET", 
+    "CONNECT",
+    "POST",
+    "PUT",
+    "DELETE",    
+    "OPTIONS"
+  };
+  int i;
+  for (i = 0; i < 6; i++) {
+    if (strcmp(conn->method, valid_method[i]) == 0) 
+      return 0;
+  }
+  
+  error_msg(bufferevent_get_output(conn->be_client), "BAD REQUEST");
+  return -1;
+}
+
 static void
 read_client(struct bufferevent *bev, void *ctx) {
   conn_t *conn = ctx;
@@ -572,6 +595,8 @@ read_client(struct bufferevent *bev, void *ctx) {
 
   sscanf(line, "%s %s %s", conn->method, conn->url, conn->version);
 
+  if (check_http_method(conn)) return; 
+
   printf("%s %s\n", conn->method, conn->url);
 
   free(line);
@@ -583,12 +608,6 @@ read_client(struct bufferevent *bev, void *ctx) {
     bufferevent_setcb(bev, rpc, NULL, client_event, conn);
     return;
   }
-
-/* Determine the connection proxy by the first
- * header of a consistent connection. Note that 
- * there is a slight chance of mis-choosing here. 
- * We just ignore it here for efficiency. 
-*/
 
   set_conn_proxy(conn, match_list(conn->url));
   init_remote_conn(conn);
