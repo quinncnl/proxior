@@ -27,13 +27,17 @@ typedef struct conn
   struct proxy_t *proxy;
 
   /* Not Response Headline */
-  short nheadline;
+  short not_headline;
 
   // For CONNECT method
   short handshaked;
 
-  /*  track current http state */
+  /* Server EOF */
+  short server_eof;
+
+  /*  Used to track current http state */
   struct state *state; 
+
 } conn_t;
 
 

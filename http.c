@@ -62,11 +62,10 @@ error_msg(struct evbuffer *output, char *msg) {
 void
 read_server(struct bufferevent *bev, void *ctx) {
   conn_t *conn = ctx;
-  struct bufferevent *bev_client = conn->be_client;
   char version[10];
   int code;
-  
-  if (conn->nheadline == 0) {
+
+  if (conn->not_headline == 0) {
     char buf[64];
 
     evbuffer_copyout(bufferevent_get_input(bev), buf, 64);
@@ -79,11 +78,13 @@ read_server(struct bufferevent *bev, void *ctx) {
     if (code == 502)
       log_error(502, "Bad gateway.", conn->url, conn->proxy);
 
-    conn->nheadline = 1;
+    conn->not_headline = 1;
   }
 
-  if (bufferevent_read_buffer(bev, bufferevent_get_output(bev_client))) 
+
+  if (bufferevent_read_buffer(bev, bufferevent_get_output(conn->be_client))) 
     fputs("Error reading from server.", stderr);
+
 
 }
 
@@ -139,13 +140,22 @@ server_event(struct bufferevent *bev, short e, void *ptr) {
   conn_t *conn = ptr;
 
   if (e & BEV_EVENT_CONNECTED) {
-    
+
+    conn->server_eof = 0;
     bufferevent_set_timeouts(bev, &config->timeout, &config->timeout);
     bufferevent_setcb(bev, read_server, NULL, server_event, conn);
     bufferevent_enable(bev, EV_READ|EV_WRITE);
     
   }
-  else if (e & (BEV_EVENT_ERROR|BEV_EVENT_EOF|BEV_EVENT_TIMEOUT)) {
+  else if (e & BEV_EVENT_EOF) {
+
+    puts("SERVER EOF");
+    bufferevent_free(conn->be_server);
+    conn->be_server = NULL;
+    conn->server_eof = 1;
+
+  }
+  else if (e & (BEV_EVENT_ERROR|BEV_EVENT_TIMEOUT)) {
 
     if (e & BEV_EVENT_ERROR) {
 
@@ -221,13 +231,13 @@ http_ready_cb(int (*callback)(void *ctx), void *ctx) {
       if (strlen(line) > MAX_URL_LEN) {
 	free(line);
 	free_conn(conn);
+	fprintf(stderr, "URL TOO LONG.");
 	return;
       }
 
       sscanf(line, "%s %s %s", conn->method, conn->url, conn->version);
 
       // Don't store request line(first line) in header.
-      // evbuffer_add_printf(s->header, "%s\r\n", line);
 
       printf("CC: %s %s\n", conn->method, conn->url);
       free(line);
@@ -238,7 +248,8 @@ http_ready_cb(int (*callback)(void *ctx), void *ctx) {
     while ((line = evbuffer_readln(buffer, NULL, EVBUFFER_EOL_CRLF)) != NULL) {
 
       if (strlen(line) == 0) {   
-	evbuffer_add_printf(s->header, "\r\n");   
+	evbuffer_add_printf(s->header, "\r\n");
+	puts("request end");
 	free(line);
 	s->is_cont = 1;
 	break;
@@ -339,10 +350,11 @@ read_direct_http(void *ctx) {
     
     if (conn->be_server == NULL) {
       connect_server(url->host, url->port, conn);
-
+      puts("init conn to server");
     }
     else if (strcmp(conn->purl->host, url->host) || conn->purl->port != url->port) {
 
+      puts("another host");
       free_parsed_url(conn->purl);   
 
       bufferevent_free(conn->be_server);
@@ -377,22 +389,21 @@ read_direct_http(void *ctx) {
 
   evbuffer_add_printf(output, "%s %s %s\r\n", conn->method, pos, conn->version);
 
-/* Need to keep a copy of HTTP request in case connection be reset. */
+  /* Need to keep a copy of HTTP request in case connection be reset. */
 
   unsigned char *tosend;
   tosend = evbuffer_pullup(conn->state->header, -1);
+  int size = evbuffer_get_length(conn->state->header);
+  evbuffer_add(output, tosend, size);
 
-  int tosend_s = evbuffer_get_length(conn->state->header);
-
-  evbuffer_add(output, tosend, tosend_s);
+  // bufferevent_write_buffer(conn->be_server, conn->state->header);
 
   if (conn->state->length) {
- 
-    tosend = evbuffer_pullup(conn->state->cont, -1);
-  
-    tosend_s = evbuffer_get_length(conn->state->cont);
 
-    evbuffer_add(output, tosend, tosend_s);
+    tosend = evbuffer_pullup(conn->state->cont, -1);
+    size = evbuffer_get_length(conn->state->cont);
+
+    evbuffer_add(output, tosend, size);
   }
 
   return 0;
@@ -401,7 +412,7 @@ read_direct_http(void *ctx) {
 static int 
 read_direct_https(void *ctx) {
   conn_t *conn = ctx;
-  if (bufferevent_read_buffer(conn->be_client, bufferevent_get_output(conn->be_server)))
+  if (conn->server_eof == 0 && bufferevent_read_buffer(conn->be_client, bufferevent_get_output(conn->be_server)))
 
   fputs("Error reading from client\n", stderr);
   return 0;
@@ -455,7 +466,6 @@ read_client_direct(void *ctx) {
       http_ready_cb(read_direct_https_handshake, ctx);
   }
   else {
-
       http_ready_cb(read_direct_http, ctx);
   }
 }
@@ -499,7 +509,7 @@ static void
 read_client_http_proxy(struct bufferevent *bev, void *ctx) 
 {
   conn_t *conn = ctx;
-  if (bufferevent_read_buffer(bev, bufferevent_get_output(conn->be_server)))
+  if (conn->server_eof == 0 && bufferevent_read_buffer(bev, bufferevent_get_output(conn->be_server)))
     printf("error reading from client\n");
 
 }
@@ -582,7 +592,6 @@ client_event(struct bufferevent *bev, short e, void *ptr) {
     bufferevent_set_timeouts(bev, &config->timeout, &config->timeout);
 
   if (e & (BEV_EVENT_ERROR|BEV_EVENT_EOF|BEV_EVENT_TIMEOUT)){
-
       free_conn(conn);
     }
 }

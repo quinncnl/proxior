@@ -1,9 +1,9 @@
 PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
 
-#G=-g
+G=-g
 CC=gcc
-#WALL=-Wall
+WALL=-Wall
 CFLAGS=-c $(WALL) $(G)
 LDFLAGS=-levent $(G)
 SOURCES=config.c http.c logging.c match.c util.c main.c rpc.c hashmap.c socks.c
