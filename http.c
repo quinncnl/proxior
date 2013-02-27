@@ -94,6 +94,7 @@ void
 free_server(conn_t *conn) {
   if (conn->be_server) 
     bufferevent_free(conn->be_server);
+
   else return;
 
   conn->be_server = NULL;
@@ -222,7 +223,7 @@ http_ready_cb(int (*callback)(void *ctx), void *ctx) {
   
   if (s == NULL) {
     conn->state = s = calloc(sizeof(struct state), 1);
-    s->eor = 0;
+    s->req_rcvd = 1;
     s->header = evbuffer_new();
     s->header_b = evbuffer_new();
     s->cont_b = evbuffer_new();
@@ -233,7 +234,7 @@ http_ready_cb(int (*callback)(void *ctx), void *ctx) {
     char *line;
     char header[64], header_v[2500];
     
-    if (s->eor) {
+    if (!s->req_rcvd) {
       line = evbuffer_readln(buffer, NULL, EVBUFFER_EOL_CRLF);
 
       if (line == NULL) return;
@@ -249,19 +250,20 @@ http_ready_cb(int (*callback)(void *ctx), void *ctx) {
 
       if (check_http_method(conn)) return; 
 
-      // Don't store request line(first line) in header.
-
       printf("CC: %s %s\n", conn->method, conn->url);
       free(line);
 
-      s->eor = 0;
+      /* First line in request has not been sent here. */
+
+      s->req_rcvd = 1;
 
       set_conn_proxy(conn, match_list(conn->url));
       init_remote_conn(conn);
       return;
     }
 
-    // find content length
+    /* Forward and find content length */
+
     while ((line = evbuffer_readln(buffer, NULL, EVBUFFER_EOL_CRLF)) != NULL) {
 
       if (strlen(line) == 0) {   
@@ -318,7 +320,7 @@ http_ready_cb(int (*callback)(void *ctx), void *ctx) {
     s->cont = tmp;
   }
 
-  s->eor = 1;
+  s->req_rcvd = 0;
   s->read = 0;
   s->length = 0;
   s->is_cont = 0;
@@ -410,7 +412,6 @@ read_direct_http(void *ctx) {
 
   /* Need to keep a copy of HTTP request in case connection be reset. Evbuffer cannot be drained!!! */
 
-  //  if (conn->state->header == NULL) retun;
   int size = evbuffer_get_length(conn->state->header);
   void *data = evbuffer_pullup(conn->state->header, size);
 
@@ -483,7 +484,7 @@ read_client_direct(void *ctx) {
       http_ready_cb(read_direct_https_handshake, ctx);
   }
   else {
-      http_ready_cb(read_direct_http, ctx);
+    http_ready_cb(read_direct_http, ctx);
   }
 }
 

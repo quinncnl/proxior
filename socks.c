@@ -35,13 +35,10 @@ socks_event(struct bufferevent *bev, short e, void *ptr)
 
       error_msg(bufferevent_get_output(conn->be_client), "Error connecting to socks server.");
 
-    free_conn(conn);
-    return;
+      free_conn(conn);
+      return;
     }
-  }
-  
-  free_server(conn);
-    
+  }    
 }
 
 static void

@@ -50,7 +50,7 @@ int main(int argc, char *argv[])
     close(2);
 
   }
- 
+  printf("Path: %s\n", path);
 
   load_config(path);
   start();

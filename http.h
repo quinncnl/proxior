@@ -43,8 +43,11 @@ struct state {
   int length, read; 
   int is_cont;
   
-  /* end of request header */
-  int eor;
+  /* Reqest line received */
+  int req_rcvd;
+
+  /* Request line sent */
+  int req_sent;
 
   struct evbuffer *header;
   struct evbuffer *header_b; // for trying on failure
