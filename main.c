@@ -1,7 +1,6 @@
 #include "http.h"
 #include "config.h"
 #include <unistd.h>
-#include <signal.h>
 #include <sys/stat.h>
 
 static void
@@ -17,10 +16,7 @@ int main(int argc, char *argv[])
 {
 
   int c, daemon = 0;
-  char path[50] = "";
-    //"/etc/proxior/";
-
-  signal(SIGPIPE, SIG_IGN);
+  char path[50] = "./";
 
   while ((c = getopt(argc, argv, "dp:")) != -1) {
     switch (c) {

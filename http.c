@@ -84,16 +84,24 @@ read_server(struct bufferevent *bev, void *ctx) {
     conn->not_headline = 1;
   }
 
-
   if (bufferevent_read_buffer(bev, bufferevent_get_output(conn->be_client))) 
     fputs("Error reading from server.", stderr);
 
+}
 
+
+void
+free_server(conn_t *conn) {
+  if (conn->be_server) 
+    bufferevent_free(conn->be_server);
+  else return;
+
+  conn->be_server = NULL;
 }
 
 /* Close both client and server connection. */
 
-static void
+void
 free_conn(conn_t *conn) {
 
   if (conn->state) {
@@ -112,8 +120,8 @@ free_conn(conn_t *conn) {
   }
 
   bufferevent_free(conn->be_client);
-  if (conn->be_server != NULL) 
-    bufferevent_free(conn->be_server);
+
+  free_server(conn);
   
   if (conn->purl) free_parsed_url(conn->purl); 
   free(conn);
@@ -139,7 +147,6 @@ set_conn_proxy(conn_t *conn, struct proxy_t *proxy) {
 
 void server_connected(conn_t *conn) 
 {
-  conn->server_eof = 0;
 
   bufferevent_set_timeouts(conn->be_server, &config->timeout, &config->timeout);
 
@@ -155,16 +162,12 @@ server_event(struct bufferevent *bev, short e, void *ptr)
 {
   conn_t *conn = ptr;
 
-  if (e & BEV_EVENT_CONNECTED) {
-
+  if (e & BEV_EVENT_CONNECTED) 
     server_connected (conn);
-    
-  }
+
   else if (e & BEV_EVENT_EOF) {
 
-    bufferevent_free(conn->be_server);
-    conn->be_server = NULL;
-    conn->server_eof = 1;
+    free_server(conn);
 
   }
   else if (e & (BEV_EVENT_ERROR|BEV_EVENT_TIMEOUT)) {
@@ -195,20 +198,17 @@ server_event(struct bufferevent *bev, short e, void *ptr)
 
       }
       else {
-	perror("Using try-proxy");
-	
+	perror("Using try-proxy");	
+	free_server(conn);
+
 	set_conn_proxy(conn, config->try_proxy);
-
-	bufferevent_free(conn->be_server);
-	conn->be_server = NULL;
-
 	init_remote_conn(conn);
 
 	return;
       }
     }//error
 
-    free_conn(conn);
+    free_server(conn);
 
   }
 }
@@ -240,7 +240,7 @@ http_ready_cb(int (*callback)(void *ctx), void *ctx) {
 
       if (strlen(line) > MAX_URL_LEN) {
 	free(line);
-	free_conn(conn);
+	free_server(conn);
 	fprintf(stderr, "URL TOO LONG.");
 	return;
       }
@@ -298,6 +298,9 @@ http_ready_cb(int (*callback)(void *ctx), void *ctx) {
   else return;
 
   end:
+
+  /* If callback function succeeded(header sent), switch header and header_b. */
+
   if ((*callback)(ctx)) return;
 
   // Clean up and get ready for next request
@@ -325,7 +328,7 @@ http_ready_cb(int (*callback)(void *ctx), void *ctx) {
 static void
 connect_server(char *host, int port, conn_t *conn) {
 
-  conn->be_server = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+  conn->be_server = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
 
   bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
   bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
@@ -397,8 +400,6 @@ read_direct_http(void *ctx) {
     return 1;
   }
 
-  if (conn->server_eof) return 0;
-
   struct evbuffer *output = bufferevent_get_output(conn->be_server);
 
   char *pos = conn->url + 10;
@@ -407,17 +408,19 @@ read_direct_http(void *ctx) {
 
   evbuffer_add_printf(output, "%s %s %s\r\n", conn->method, pos, conn->version);
 
-  /* Need to keep a copy of HTTP request in case connection be reset. */
+  /* Need to keep a copy of HTTP request in case connection be reset. Evbuffer cannot be drained!!! */
 
+  //  if (conn->state->header == NULL) retun;
   int size = evbuffer_get_length(conn->state->header);
+  void *data = evbuffer_pullup(conn->state->header, size);
 
-  bufferevent_write_buffer(conn->be_server, conn->state->header);
+  bufferevent_write(conn->be_server, data, size);
 
   if (conn->state->length) {
 
     size = evbuffer_get_length(conn->state->cont);
-
-    bufferevent_write_buffer(conn->be_server, conn->state->cont);
+    data = (void *) evbuffer_pullup(conn->state->cont, size);
+    bufferevent_write(conn->be_server, data, size);
   }
 
   return 0;
@@ -426,7 +429,7 @@ read_direct_http(void *ctx) {
 static int 
 read_direct_https(void *ctx) {
   conn_t *conn = ctx;
-  if (conn->server_eof == 0 && bufferevent_read_buffer(conn->be_client, bufferevent_get_output(conn->be_server)))
+  if (conn->be_server && bufferevent_read_buffer(conn->be_client, bufferevent_get_output(conn->be_server)))
 
   fputs("Error reading from client\n", stderr);
   return 0;
@@ -491,7 +494,7 @@ read_client_http_proxy_handshake(void *ptr) {
   conn_t *conn = ptr;
   struct bufferevent *bevs;
 
-  bevs = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+  bevs = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
 
   conn->be_server = bevs;
 
@@ -523,7 +526,7 @@ static void
 read_client_http_proxy(struct bufferevent *bev, void *ctx) 
 {
   conn_t *conn = ctx;
-  if (conn->server_eof == 0 && bufferevent_read_buffer(bev, bufferevent_get_output(conn->be_server)))
+  if (conn->be_server && bufferevent_read_buffer(bev, bufferevent_get_output(conn->be_server)))
     printf("error reading from client\n");
 
 }
@@ -533,7 +536,6 @@ init_remote_conn(conn_t *conn) {
 
   if (conn->proxy != NULL) {
     if (conn->proxy->type == HTTP) {
-
       read_client_http_proxy_handshake(conn);
 
       bufferevent_setcb(conn->be_client, read_client_http_proxy, NULL, client_event, conn);
@@ -566,6 +568,7 @@ check_http_method(conn_t *conn) {
   }
   
   error_msg(bufferevent_get_output(conn->be_client), "BAD REQUEST");
+  free_server(conn);
   return -1;
 }
 
@@ -588,7 +591,7 @@ read_client(struct bufferevent *bev, void *ctx) {
 
   if (strlen(line) > MAX_URL_LEN) {
     free(line);
-    free_conn(conn);
+    free_server(conn);
     fprintf(stderr, "URL TOO LONG.");
     return;
   }
@@ -618,10 +621,7 @@ static void
 client_event(struct bufferevent *bev, short e, void *ptr) {
   conn_t *conn = ptr;
 
-  if (e & BEV_EVENT_CONNECTED) 
-    bufferevent_set_timeouts(bev, &config->timeout, &config->timeout);
-
-  if (e & (BEV_EVENT_ERROR|BEV_EVENT_EOF|BEV_EVENT_TIMEOUT)){
+  if (e & (BEV_EVENT_ERROR|BEV_EVENT_EOF)){
       free_conn(conn);
     }
 }
@@ -630,7 +630,7 @@ static void
 accept_conn_cb(struct evconnlistener *listener,
 	       evutil_socket_t fd, struct sockaddr *address, int socklen,
 	       void *ctx) {
-  struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+  struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
 
   conn_t *conn = calloc(sizeof(conn_t), 1);
 

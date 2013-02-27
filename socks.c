@@ -34,13 +34,14 @@ socks_event(struct bufferevent *bev, short e, void *ptr)
       fprintf(stderr, "Error connecting to socks server: %s\n", evutil_socket_error_to_string(code));
 
       error_msg(bufferevent_get_output(conn->be_client), "Error connecting to socks server.");
-      return;
-    }
 
-    bufferevent_free(bev);
-    
-    conn->be_server = NULL;
+    free_conn(conn);
+    return;
+    }
   }
+  
+  free_server(conn);
+    
 }
 
 static void
@@ -110,7 +111,7 @@ struct bufferevent *
 socks_connect(char *host, unsigned short port, void (*callback)(void *), void *ptr) 
 {
 
-  struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+  struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
 
   struct socksctx *ctx = malloc(sizeof(struct socksctx));
 

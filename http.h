@@ -32,9 +32,6 @@ typedef struct conn
   // For CONNECT method
   short handshaked;
 
-  /* Server EOF */
-  short server_eof;
-
   /*  Used to track current http state */
   struct state *state; 
 
@@ -54,6 +51,12 @@ struct state {
   struct evbuffer *cont;
   struct evbuffer *cont_b;
 };
+
+void
+free_server(conn_t *conn);
+
+void
+free_conn(conn_t *conn);
 
 void
 http_ready_cb(int (*callback)(void *ctx), void *ctx);
