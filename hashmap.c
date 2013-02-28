@@ -79,6 +79,17 @@ hashmap_insert (hashmap_t map, char *rule)
 
         hash = hashfunc (key, map->size);
 
+	/* Keep out duplications */
+
+
+	struct hashentry_s *it = map->buckets[hash].head;
+	while (it) {
+	  if (strcmp(rule, it->data) == 0)
+	    return 0;
+
+	  it = it->next;
+	}
+
         key_copy = strdup (key);
 
         data_copy = strdup(rule);
@@ -93,9 +104,6 @@ hashmap_insert (hashmap_t map, char *rule)
         ptr->key = key_copy;
         ptr->data = data_copy;
 
-        /*
-         * Now add the entry to the end of the bucket chain.
-         */
         ptr->next = NULL;
         ptr->prev = map->buckets[hash].tail;
         if (map->buckets[hash].tail)

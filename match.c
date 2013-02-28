@@ -25,8 +25,7 @@
 struct proxy_t *
 match_list(char *url) {
 
-  struct acllist *al = config->acl_h;
-  struct acl *node = al->head;
+  struct rulelist *node = cfg.rulelist_head;
 
   char *domain = get_domain(url);
 
@@ -59,6 +58,6 @@ match_list(char *url) {
   }
 
  def:
-  return config->default_proxy;
+  return cfg.default_proxy;
 }
 

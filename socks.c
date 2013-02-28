@@ -87,18 +87,6 @@ socks_read(struct bufferevent *bev, void *ptr) {
 
     server_connected(conn);
 
-    struct evbuffer *output;
-    if (conn->state && conn->state->header_b) {
-      output = bufferevent_get_output(bev);
-
-      evbuffer_add_printf(output, "%s %s %s\r\n", conn->method, conn->url, conn->version);
-
-      evbuffer_remove_buffer(conn->state->header_b, output, -1);
-
-      if (conn->state->cont_b) 
-	evbuffer_remove_buffer(conn->state->cont_b, output, -1);
-    }
-
     (*(ctx->callback))(ctx->ctx);
 
   }

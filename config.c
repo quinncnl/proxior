@@ -26,8 +26,32 @@
 #include <assert.h>
 #include <arpa/inet.h>
 
+struct rulelist *
+get_rulelist(char *listname) {
+  struct rulelist *rl = cfg.rulelist_head;
+  while (rl != NULL) {
+    if (strcmp(rl->name, listname) == 0) 
+      return rl;
+    else
+      rl = rl->next;
+  }
+  return NULL;
+}
+
+void
+add_to_trylist(char *dom) {
+
+  struct rulelist *rl = get_rulelist("trylist");
+  struct hashmap_s *map  = rl->data;
+
+  if (map == NULL)
+    return;
+
+  hashmap_insert(map, dom);
+}
+
 static void
-add_proxy(struct proxylist *pl, char *name, char *ap, unsigned char type) 
+add_proxy(char *name, char *ap, unsigned char type) 
 {
   struct proxy_t *proxy = malloc(sizeof(struct proxy_t));
 
@@ -36,15 +60,15 @@ add_proxy(struct proxylist *pl, char *name, char *ap, unsigned char type)
   proxy->port = atoi(strtok(NULL, ""));
 
   proxy->type = type;
-  proxy->next = pl->head;
-  pl->head = proxy;
+  proxy->next = cfg.proxy_head;
+  cfg.proxy_head = proxy;
 
 }
 
 static struct proxy_t *
 find_proxy(char *proxy_name) {
-  struct proxylist *proxy = config->proxy_h;
-  struct proxy_t *node = proxy->head;
+
+  struct proxy_t *node = cfg.proxy_head;
   do {
     if(strcmp(node->name, proxy_name) == 0)
       return node;
@@ -61,8 +85,14 @@ find_proxy(char *proxy_name) {
 }
 
 static void
-add_acl(struct acllist *al, char *proxy_name, char *list) {
-  struct acl *acl = malloc(sizeof(struct acl));
+add_acl(char *proxy_name, char *list) {
+  struct rulelist *rl = malloc(sizeof(struct rulelist));
+  struct hashmap_s *map;
+
+  if (strcmp(list, "trylist") == 0) {
+    map = hashmap_create(20);
+    goto add;
+  }
 
   char *path = get_file_path(list);
 
@@ -78,7 +108,7 @@ add_acl(struct acllist *al, char *proxy_name, char *list) {
 
   printf("Rules in %s: %d\n", list, lines);
 
-  struct hashmap_s *map = hashmap_create(lines * 1.2 + 15);
+  map = hashmap_create(lines + 10);
 
   while (fgets(buf, 200, fh)) {
     // '\n' included
@@ -94,51 +124,55 @@ add_acl(struct acllist *al, char *proxy_name, char *list) {
   free(buf);
   fclose(fh);
 
-  acl->name = strdup(list);
-  acl->proxy = find_proxy(proxy_name);
-  acl->data = map;
-  if (al->head == NULL)
-    al->head = acl;
-  else 
-    al->tail->next = acl;
+ add:
 
-  acl->next = NULL;
-  al->tail = acl;
+  rl->name = strdup(list);
+  rl->proxy = find_proxy(proxy_name);
+  rl->data = map;
+  if (cfg.rulelist_head == NULL)
+    cfg.rulelist_head = rl;
+  else 
+    cfg.rulelist_tail->next = rl;
+
+  rl->next = NULL;
+  cfg.rulelist_tail = rl;
+
 }
 
 static void 
 set_default_proxy(char *proxy_name) {
-  config->default_proxy = find_proxy(proxy_name);
+  cfg.default_proxy = find_proxy(proxy_name);
 }
 
 static void 
 set_try_proxy(char *proxy_name) {
-  config->try_proxy = find_proxy(proxy_name);
+  cfg.try_proxy = find_proxy(proxy_name);
 }
 
 static void
 set_timeout(char *time) {
-  config->timeout.tv_sec = atoi(time);
-  config->timeout.tv_usec = 0;
+  cfg.timeout.tv_sec = atoi(time);
+  cfg.timeout.tv_usec = 0;
 }
 
 static void
 set_listen(char *word) {
-  config->listen_addr = strdup(strtok(word, ":"));
+  cfg.listen_addr = strdup(strtok(word, ":"));
 
-  sscanf(strtok(NULL, ""), "%hd", &config->listen_port);
+  sscanf(strtok(NULL, ""), "%hd", &cfg.listen_port);
 
 }
 
 /* Load and resolve configuration */
 
-void load_config(char path[]) {
+void load_config(char path[]) 
+{
   char buffer[1024];
   char word1[20], word2[20], word3[20];
 
-  config = malloc(sizeof(conf));
+  memset(&cfg, 0, sizeof(cfg));
 
-  config->path = path;
+  cfg.path = path;
 
   char *config_path = get_file_path("proxior.conf");
   FILE *fd = fopen(config_path, "r");
@@ -148,29 +182,28 @@ void load_config(char path[]) {
     exit(1);
   }
 
-  struct proxylist *plist = calloc(sizeof(struct proxylist), 1);
-  struct acllist *alist = calloc(sizeof(struct acllist), 1);
-
-  config->proxy_h = plist;
-  config->acl_h = alist;
-
   while(fgets(buffer, sizeof(buffer), fd)) {
-    if (buffer[0] == '#'|| buffer[0] == '\n') continue;
+    if (buffer[0] == '#' || buffer[0] == '\n') 
+      continue;
+
     sscanf(buffer, "%s %s %s", word1, word2, word3);
+
     if (strcmp(word1, "proxy") == 0) 
-      add_proxy(plist, word2, word3, HTTP);
+      add_proxy(word2, word3, PROXY_HTTP);
 
     else if (strcmp(word1, "socks5") == 0)
-      add_proxy(plist, word2, word3, SOCKS);
+      add_proxy(word2, word3, PROXY_SOCKS);
 
     else if (strcmp(word1, "acl") == 0)
-      add_acl(alist, word2, word3);
+      add_acl(word2, word3);
 
     else if (strcmp(word1, "acl-default") == 0) 
       set_default_proxy(word2);
 
-    else if (strcmp(word1, "acl-try") == 0) 
+    else if (strcmp(word1, "acl-try") == 0) {
       set_try_proxy(word2);
+      add_acl(word2, "trylist");
+    }
     
     else if (strcmp(word1, "timeout") == 0) 
       set_timeout(word2);
@@ -191,7 +224,7 @@ void update_rule(char *list, char *rule)
 
   /* Remove existing rule */
 
-  struct acl *it = config->acl_h->head;
+  struct rulelist *it = cfg.rulelist_head;
 
   while (it != NULL) {
 
@@ -207,7 +240,7 @@ void update_rule(char *list, char *rule)
 
 void remove_rule(char *list, char *rule) 
 {
-  struct acl *it = config->acl_h->head;
+  struct rulelist *it = cfg.rulelist_head;
 
   while (it != NULL) {
 
@@ -221,7 +254,8 @@ void remove_rule(char *list, char *rule)
 char *get_file_path(char *filename) 
 {
   static char path[64];
-  strcpy(path, config->path);
+
+  strcpy(path, cfg.path);
   strcat(path, filename);
   return path;
 }
@@ -230,15 +264,15 @@ char *get_file_path(char *filename)
 
 void flush_list() 
 {
-  struct acl *acl = config->acl_h->head;
+  struct rulelist *rl = cfg.rulelist_head;
   struct hashmap_s *map;
   FILE *fd;
   struct hashentry_s *it;
   int i;
 
-  while (acl) {
-    map = acl->data;
-    fd = fopen(get_file_path(acl->name), "w");
+  while (rl) {
+    map = rl->data;
+    fd = fopen(get_file_path(rl->name), "w");
 
     for (i = 0; i < map->size; i++) {
       
@@ -249,7 +283,7 @@ void flush_list()
       }
     }
     fclose(fd);
-    acl = acl->next;
+    rl = rl->next;
   }
 
 }

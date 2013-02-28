@@ -29,9 +29,6 @@
 static void
 read_client_http_proxy_handshake(void *);
 
-static int 
-read_direct_http(void *);
-
 static void
 read_client_direct(void *) ;
 
@@ -42,7 +39,13 @@ static void
 init_remote_conn(conn_t *);
 
 static int
-check_http_method(conn_t *conn) ;
+validate_http_method(conn_t *conn) ;
+
+static int
+reqest_line_process(conn_t *conn);
+
+static void
+connect_server(char *host, int port, conn_t *conn);
 
 void
 error_msg(struct evbuffer *output, char *msg) {
@@ -65,24 +68,6 @@ error_msg(struct evbuffer *output, char *msg) {
 void
 read_server(struct bufferevent *bev, void *ctx) {
   conn_t *conn = ctx;
-  char version[10];
-  int code;
-
-  if (conn->not_headline == 0) {
-    char buf[64];
-
-    evbuffer_copyout(bufferevent_get_input(bev), buf, 64);
-
-    if (strlen(buf) == 0) return;
-
-    sscanf(buf, "%s %d", version, &code);
-    
-    // Caused by reset or timeout from proxy server.
-    if (code == 502)
-      log_error(502, "Bad gateway.", conn->url, conn->proxy);
-
-    conn->not_headline = 1;
-  }
 
   if (bufferevent_read_buffer(bev, bufferevent_get_output(conn->be_client))) 
     fputs("Error reading from server.", stderr);
@@ -106,17 +91,6 @@ void
 free_conn(conn_t *conn) {
 
   if (conn->state) {
-    if (conn->state->cont) 
-      evbuffer_free(conn->state->cont);
-    
-    if (conn->state->header) {
-      evbuffer_free(conn->state->header);  
-      evbuffer_free(conn->state->header_b);
-
-      if (conn->state->cont_b) 
-	evbuffer_free(conn->state->cont_b);   
-    }
-
     free(conn->state);
   }
 
@@ -133,23 +107,23 @@ set_conn_proxy(conn_t *conn, struct proxy_t *proxy) {
 
   conn->proxy = proxy;
   if (proxy == NULL) {
-    conn->tos = DIRECT;
+    conn->tos = CONN_DIRECT;
     return ;
   }
 
   switch (proxy->type) {
-  case HTTP:
-    conn->tos = HTTP_PROXY;
+  case PROXY_HTTP:
+    conn->tos = CONN_HTTP_PROXY;
     break;
-  case SOCKS:
-    conn->tos = SOCKS_PROXY;
+  case PROXY_SOCKS:
+    conn->tos = CONN_SOCKS_PROXY;
   }
 }
 
 void server_connected(conn_t *conn) 
 {
 
-  bufferevent_set_timeouts(conn->be_server, &config->timeout, &config->timeout);
+  bufferevent_set_timeouts(conn->be_server, &cfg.timeout, &cfg.timeout);
 
   bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
 
@@ -182,8 +156,8 @@ server_event(struct bufferevent *bev, short e, void *ptr)
 	log_error(code,  evutil_socket_error_to_string(code), conn->url, conn->proxy);
 
      
-      if (conn->proxy == config->try_proxy) {
-	if (config->try_proxy != NULL) {
+      if (conn->proxy == cfg.try_proxy) {
+	if (cfg.try_proxy != NULL) {
 	  char msg1[50] =  "Error connecting to proxy ";
 	  strcat(msg1, conn->proxy->name);
 	  puts(msg1);
@@ -199,12 +173,13 @@ server_event(struct bufferevent *bev, short e, void *ptr)
 
       }
       else {
-	perror("Using try-proxy");	
+	perror("Connection failed. Added to temperary try-list"); 
+
 	free_server(conn);
 
-	set_conn_proxy(conn, config->try_proxy);
-	init_remote_conn(conn);
+	add_to_trylist(conn->purl->host);
 
+	error_msg(bufferevent_get_output(conn->be_client), "Connection reset. Using try-proxy next time.");
 	return;
       }
     }//error
@@ -214,64 +189,89 @@ server_event(struct bufferevent *bev, short e, void *ptr)
   }
 }
 
+static void
+send_req_line(conn_t *conn) {
+
+  char *pos = conn->url + 10;
+  while (pos[0] != '/')
+    pos++;
+
+  evbuffer_add_printf(bufferevent_get_output(conn->be_server), "%s %s %s\r\n", conn->method, pos, conn->version);
+
+}
+
+static void
+prepare_connection(conn_t *conn) {
+
+  struct state *s = conn->state; 
+
+  if (!s->req_sent) {
+
+    struct parsed_url *url;
+    url = simple_parse_url(conn->url);
+
+    if (conn->be_server == NULL) 
+      connect_server(url->host, url->port, conn);
+
+    else if (strcmp(conn->purl->host, url->host) || conn->purl->port != url->port) {
+
+      free_parsed_url(conn->purl);   
+
+      free_server(conn);
+
+      connect_server(url->host, url->port, conn);
+
+    }
+
+    conn->purl =  url;
+    send_req_line(conn);
+
+    s->req_sent = 1;
+  }
+}
+
+
+/* Process consistent connection. 
+ * Note that in a same client connection, the request host may vary. */
 
 void
-http_ready_cb(int (*callback)(void *ctx), void *ctx) {
-  conn_t *conn = ctx;
-  struct state *s = conn->state; // s for shorthand
+http_direct_process(conn_t *conn) {
+
+  /* Keep a state */
+  struct state *s = conn->state; 
   struct evbuffer *buffer = bufferevent_get_input(conn->be_client);
+  struct evbuffer *output;
   
   if (s == NULL) {
     conn->state = s = calloc(sizeof(struct state), 1);
-    s->req_rcvd = 1;
-    s->header = evbuffer_new();
-    s->header_b = evbuffer_new();
-    s->cont_b = evbuffer_new();
+    s->pos = STATE_HEADER;
   }
 
-  // header section
-  if (!s->is_cont) {
-    char *line;
+  char *line;
+  if (s->pos == STATE_REQ_LINE) {
+    s->pos = STATE_HEADER;
+
+    /* Process request line */
+    reqest_line_process(conn);
+    return;
+  }
+
+  prepare_connection(conn);
+  if (s->pos == STATE_HEADER) {
+
     char header[64], header_v[2500];
     
-    if (!s->req_rcvd) {
-      line = evbuffer_readln(buffer, NULL, EVBUFFER_EOL_CRLF);
-
-      if (line == NULL) return;
-
-      if (strlen(line) > MAX_URL_LEN) {
-	free(line);
-	free_server(conn);
-	fprintf(stderr, "URL TOO LONG.");
-	return;
-      }
-
-      sscanf(line, "%s %s %s", conn->method, conn->url, conn->version);
-
-      if (check_http_method(conn)) return; 
-
-      printf("CC: %s %s\n", conn->method, conn->url);
-      free(line);
-
-      /* First line in request has not been sent here. */
-
-      s->req_rcvd = 1;
-
-      set_conn_proxy(conn, match_list(conn->url));
-      init_remote_conn(conn);
-      return;
-    }
+    output = bufferevent_get_output(conn->be_server);
 
     /* Forward and find content length */
-
     while ((line = evbuffer_readln(buffer, NULL, EVBUFFER_EOL_CRLF)) != NULL) {
 
-      if (strlen(line) == 0) {   
-	evbuffer_add_printf(s->header, "\r\n");
+      if (strlen(line) == 0) {
+	evbuffer_add_printf(output, "\r\n");
 
 	free(line);
-	s->is_cont = 1;
-	break;
+	s->pos = STATE_BODY;
+	goto read_body;
       }
  
       sscanf(line, "%s %s", header, header_v);
@@ -279,21 +279,27 @@ http_ready_cb(int (*callback)(void *ctx), void *ctx) {
       if (strcmp(header, "Content-Length:") == 0) 
 	s->length = atoi(header_v);
 
-      if (strcmp(header, "Proxy-Connection:")) 
-	evbuffer_add_printf(s->header, "%s\r\n", line);
+      /* Skip proxy-connection */
 
+      if (strcmp(header, "Proxy-Connection:")) {
+	evbuffer_add_printf(output, "%s\r\n", line);
+
+      }
       free(line);
     } // while
+
+    return;
   } // header
 
-  // content section
-  if (s->is_cont) {
-    // simply a header, no content
-    if (s->length == 0) goto end;  
+ read_body:
 
-    if (s->cont == NULL) s->cont = evbuffer_new();
+  if (s->pos == STATE_BODY) {
 
-    s->read += evbuffer_remove_buffer(buffer, s->cont, s->length);
+    if (s->length == 0) goto end; 
+
+    output = bufferevent_get_output(conn->be_server);
+
+    s->read += evbuffer_remove_buffer(buffer, output, evbuffer_get_length(buffer));
 
     if (s->read != s->length) return;
   }
@@ -301,29 +307,12 @@ http_ready_cb(int (*callback)(void *ctx), void *ctx) {
 
   end:
 
-  /* If callback function succeeded(header sent), switch header and header_b. */
-
-  if ((*callback)(ctx)) return;
-
   // Clean up and get ready for next request
 
-  evbuffer_drain(s->header_b,evbuffer_get_length(s->header_b));
-
-  struct evbuffer *tmp = s->header_b;
-  s->header_b = s->header;
-  s->header = tmp;
-
-  if (s->length) {
-    evbuffer_drain(s->cont_b,evbuffer_get_length(s->cont_b));
-    tmp = s->cont_b;
-    s->cont_b = s->cont;
-    s->cont = tmp;
-  }
-
-  s->req_rcvd = 0;
+  s->pos = STATE_REQ_LINE;
+  s->req_sent = 0;
   s->read = 0;
   s->length = 0;
-  s->is_cont = 0;
 
 }
 
@@ -358,7 +347,7 @@ read_client_socks_handshake(void *ptr) {
 }
 
 /* Return 1 if data not sent */
-
+/*
 static int 
 read_direct_http(void *ctx) {
   conn_t *conn = ctx;
@@ -410,8 +399,6 @@ read_direct_http(void *ctx) {
 
   evbuffer_add_printf(output, "%s %s %s\r\n", conn->method, pos, conn->version);
 
-  /* Need to keep a copy of HTTP request in case connection be reset. Evbuffer cannot be drained!!! */
-
   int size = evbuffer_get_length(conn->state->header);
   void *data = evbuffer_pullup(conn->state->header, size);
 
@@ -426,7 +413,7 @@ read_direct_http(void *ctx) {
 
   return 0;
 }
-
+*/
 static int 
 read_direct_https(void *ctx) {
   conn_t *conn = ctx;
@@ -436,7 +423,7 @@ read_direct_https(void *ctx) {
   return 0;
 }
 
-static int 
+static void 
 read_direct_https_handshake(void *ctx) {
   conn_t *conn = ctx;
 
@@ -460,17 +447,19 @@ read_direct_https_handshake(void *ctx) {
     free(tmp);
   }
 
-  if (conn->tos == DIRECT)
+  if (conn->tos == CONN_DIRECT)
     connect_server(host, port, conn);
   
   free(url);
   evbuffer_add_printf(bufferevent_get_output(conn->be_client), "HTTP/1.1 200 Connection established\r\n\r\n");
 
   conn->handshaked = 1;
-  return 1;
+
 }
 
-/* Connect to server directly. Need to take care of both http and https */
+/* Connect to server directly. 
+ * Need to take care of both http and https 
+*/
 
 static void
 read_client_direct(void *ctx) {
@@ -481,10 +470,10 @@ read_client_direct(void *ctx) {
     if (conn->handshaked)
       read_direct_https(ctx);
     else
-      http_ready_cb(read_direct_https_handshake, ctx);
+      read_direct_https_handshake(ctx);
   }
   else {
-    http_ready_cb(read_direct_http, ctx);
+    http_direct_process(conn);
   }
 }
 
@@ -503,16 +492,7 @@ read_client_http_proxy_handshake(void *ptr) {
 
   evbuffer_add_printf(output, "%s %s %s\r\n", conn->method, conn->url, conn->version);
 
-  if (conn->state && conn->state->header_b) {
-    evbuffer_remove_buffer(conn->state->header_b, output, -1);
-    if (conn->state->cont_b) 
-      evbuffer_remove_buffer(conn->state->cont_b, output, -1);
-  }
-  else 
-    bufferevent_read_buffer(conn->be_client, output);
-
-  if (conn->state && conn->state->cont) 
-    evbuffer_remove_buffer(conn->state->cont, output, -1);
+  bufferevent_read_buffer(conn->be_client, output);
 
   bufferevent_setcb(bevs, NULL, NULL, server_event, conn);
   bufferevent_enable(bevs, EV_READ|EV_WRITE);
@@ -532,17 +512,19 @@ read_client_http_proxy(struct bufferevent *bev, void *ctx)
 
 }
 
+/* Start a connection to server or proxy. The request line has been read. */
+
 static void
 init_remote_conn(conn_t *conn) {
 
   if (conn->proxy != NULL) {
-    if (conn->proxy->type == HTTP) {
+    if (conn->proxy->type == PROXY_HTTP) {
       read_client_http_proxy_handshake(conn);
 
       bufferevent_setcb(conn->be_client, read_client_http_proxy, NULL, client_event, conn);
 
     }
-    else if (conn->proxy->type == SOCKS) {
+    else if (conn->proxy->type == PROXY_SOCKS) {
 
       read_client_socks_handshake(conn);
     }
@@ -553,7 +535,7 @@ init_remote_conn(conn_t *conn) {
 }
 
 static int
-check_http_method(conn_t *conn) {
+validate_http_method(conn_t *conn) {
   static const char *valid_method[] = {
     "GET", 
     "CONNECT",
@@ -567,17 +549,70 @@ check_http_method(conn_t *conn) {
     if (strcmp(conn->method, valid_method[i]) == 0) 
       return 0;
   }
-  
+
   error_msg(bufferevent_get_output(conn->be_client), "BAD REQUEST");
+
   free_server(conn);
   return -1;
 }
 
+static int
+validate_req_line(conn_t *conn, char *line) 
+{
+  if (strlen(line) > MAX_URL_LEN) {
+
+    free_server(conn);
+    fprintf(stderr, "URL TOO LONG.");
+    return -1;
+  }
+  return 0;
+}
+
+/* Read request line.
+ * Return 1 if request has not been read.
+ * Return -1 if validation failed. */
+
+static int
+reqest_line_process(conn_t *conn) {
+  char *line;
+
+  line = evbuffer_readln(bufferevent_get_input(conn->be_client), NULL, EVBUFFER_EOL_CRLF);
+
+  if (line == NULL) return 1;
+
+  if (validate_req_line(conn, line)) goto fail;
+
+  sscanf(line, "%s %s %s", conn->method, conn->url, conn->version);
+
+  if (validate_http_method(conn)) goto fail;
+
+  printf("%s %s\n", conn->method, conn->url);
+
+  if (conn->url[0] == '/' ){
+    rpc(conn->be_client, conn);
+    conn->tos = CONN_CONFIG;
+
+    bufferevent_setcb(conn->be_client, rpc, NULL, client_event, conn);
+
+    free(line);
+    return 0;
+  }
+
+  set_conn_proxy(conn, match_list(conn->url));
+  init_remote_conn(conn);
+  free(line);
+  return 0;
+
+ fail:
+  free(line);
+  return -1;
+}
+
 static void
-read_client(struct bufferevent *bev, void *ctx) {
+read_client_cb(struct bufferevent *bev, void *ctx) {
   conn_t *conn = ctx;
 
-  if (conn->tos == DIRECT || conn->tos == SOCKS_PROXY) {
+  if (conn->tos == CONN_DIRECT || conn->tos == CONN_SOCKS_PROXY) {
     read_client_direct(conn);
     return;
   }
@@ -585,46 +620,18 @@ read_client(struct bufferevent *bev, void *ctx) {
   /* The first time talking to a client.
      Find out requested url and apply switching rules  */
 
-  char *line;
-  line = evbuffer_readln(bufferevent_get_input(bev), NULL, EVBUFFER_EOL_CRLF);
-
-  if (line == NULL) return;
-
-  if (strlen(line) > MAX_URL_LEN) {
-    free(line);
-    free_server(conn);
-    fprintf(stderr, "URL TOO LONG.");
-    return;
-  }
-
-  sscanf(line, "%s %s %s", conn->method, conn->url, conn->version);
-
-  if (check_http_method(conn)) return; 
-
-  printf("%s %s\n", conn->method, conn->url);
-
-  free(line);
-
-  if (conn->url[0] == '/' ){
-    rpc(bev, ctx);
-    conn->tos = CONFIG;
-
-    bufferevent_setcb(bev, rpc, NULL, client_event, conn);
-    return;
-  }
-
-  set_conn_proxy(conn, match_list(conn->url));
-  init_remote_conn(conn);
-
+  reqest_line_process(conn);
 }
 
 static void 
 client_event(struct bufferevent *bev, short e, void *ptr) {
   conn_t *conn = ptr;
 
+  /* If client closes the connection, we can safely free server conn. */
+
   if (e & (BEV_EVENT_ERROR|BEV_EVENT_EOF)){
-      free_conn(conn);
-    }
+    free_conn(conn);
+  }
 }
 
 static void
@@ -637,7 +644,7 @@ accept_conn_cb(struct evconnlistener *listener,
 
   conn->be_client = bev;
 
-  bufferevent_setcb(bev, read_client, NULL, client_event, conn);
+  bufferevent_setcb(bev, read_client_cb, NULL, client_event, conn);
   bufferevent_enable(bev, EV_READ|EV_WRITE);
 }
 
@@ -653,8 +660,8 @@ start() {
 
   memset(&sin, 0, sizeof(sin));
   sin.sin_family = AF_INET;
-  sin.sin_addr.s_addr = inet_addr(config->listen_addr);
-  sin.sin_port = htons(config->listen_port);
+  sin.sin_addr.s_addr = inet_addr(cfg.listen_addr);
+  sin.sin_port = htons(cfg.listen_port);
 
   listener = evconnlistener_new_bind(base, accept_conn_cb, NULL,
 				     LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, -1,

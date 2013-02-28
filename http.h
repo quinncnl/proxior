@@ -5,7 +5,7 @@
 #include "logging.h"
 #include "config.h"
 
-extern conf *config;
+extern config cfg;
 
 typedef struct conn
 {
@@ -17,17 +17,14 @@ typedef struct conn
 
   // type of service
   enum {
-    DIRECT = 0x01,
-    HTTP_PROXY = 0x02,
-    SOCKS_PROXY = 0x03,
-    CONFIG = 0x08
+    CONN_DIRECT = 0x01,
+    CONN_HTTP_PROXY = 0x02,
+    CONN_SOCKS_PROXY = 0x03,
+    CONN_CONFIG = 0x08
   } tos;
 
   /* proxy to use, NULL for direct */
   struct proxy_t *proxy;
-
-  /* Not Response Headline */
-  short not_headline;
 
   // For CONNECT method
   short handshaked;
@@ -41,18 +38,18 @@ typedef struct conn
 struct state {
   /* for content section */
   int length, read; 
-  int is_cont;
   
-  /* Reqest line received */
-  int req_rcvd;
+  enum {
+    STATE_REQ_LINE, //req line to be read
+    STATE_HEADER, 
+    STATE_BODY
+  } pos;
 
   /* Request line sent */
   int req_sent;
 
-  struct evbuffer *header;
-  struct evbuffer *header_b; // for trying on failure
-  struct evbuffer *cont;
-  struct evbuffer *cont_b;
+  char *body;
+
 };
 
 void

@@ -1,6 +1,8 @@
 #ifndef _CONFIG_H_
 #define _CONFIG_H_
 
+#define VERSION "1.0.1"
+
 #include <stdio.h>
 #include "hashmap.h"
 #include <event2/util.h>
@@ -11,43 +13,38 @@ struct proxy_t {
   unsigned short port;
 
   enum {
-    HTTP = 0x01,
-    SOCKS = 0x02
+    PROXY_HTTP = 0x01,
+    PROXY_SOCKS = 0x02
   } type;
   
   struct proxy_t *next;
 };
 
-struct proxylist {
-  struct proxy_t *head;
-};
-
-struct acl {
+struct rulelist {
   char *name;
   struct hashmap_s *data;
   struct proxy_t *proxy;
-  struct acl *next;
-};
-
-struct acllist {
-  struct acl *head;
-  struct acl *tail;
+  struct rulelist *next;
 };
 
 typedef struct {
-  struct proxylist *proxy_h;
-  struct acllist *acl_h;
+  struct proxy_t *proxy_head;
+
+  struct rulelist *rulelist_head;
+  struct rulelist *rulelist_tail;
+
   struct proxy_t *default_proxy;
   struct proxy_t *try_proxy;
   struct timeval timeout;
+
   char *listen_addr;
   short listen_port;
   int foreground;
   char *path;
   FILE *logfd;
-} conf;
+} config;
 
-conf *config;
+config cfg;
 
 void load_config(char *);
 
@@ -60,6 +57,11 @@ void remove_rule(char *list, char *rule);
 char *get_file_path(char *);
 
 void flush_list() ;
-//void free_config();
+
+void
+add_to_trylist(char *url);
+
+struct rulelist *
+get_rulelist(char *listname);
 
 #endif /* _CONFIG_H_ */
