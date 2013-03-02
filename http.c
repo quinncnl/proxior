@@ -48,6 +48,9 @@ static void
 connect_server(char *host, int port, conn_t *conn);
 
 void
+http_direct_process(conn_t *conn);
+
+void
 error_msg(struct evbuffer *output, char *msg) {
 
   size_t size = strlen(msg);
@@ -74,6 +77,12 @@ read_server(struct bufferevent *bev, void *ctx) {
 
 }
 
+void
+write_server(struct bufferevent *bev, void *ctx) {
+  conn_t *conn = ctx;
+
+  http_direct_process(conn);
+}
 
 void
 free_server(conn_t *conn) {
@@ -120,16 +129,6 @@ set_conn_proxy(conn_t *conn, struct proxy_t *proxy) {
   }
 }
 
-void server_connected(conn_t *conn) 
-{
-
-  bufferevent_set_timeouts(conn->be_server, &cfg.timeout, &cfg.timeout);
-
-  bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
-
-  bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
-}
-
 /* server event */
 
 void 
@@ -138,10 +137,10 @@ server_event(struct bufferevent *bev, short e, void *ptr)
   conn_t *conn = ptr;
 
   if (e & BEV_EVENT_CONNECTED) 
-    server_connected (conn);
+
+    bufferevent_set_timeouts(conn->be_server, &cfg.timeout, &cfg.timeout);
 
   else if (e & BEV_EVENT_EOF) {
-
     free_server(conn);
 
   }
@@ -173,7 +172,8 @@ server_event(struct bufferevent *bev, short e, void *ptr)
 
       }
       else {
-	perror("Connection failed. Added to temperary try-list"); 
+	if (code == ECONNRESET) {
+	perror("Connection reset. Added to temperary try-list"); 
 
 	free_server(conn);
 
@@ -181,6 +181,7 @@ server_event(struct bufferevent *bev, short e, void *ptr)
 
 	error_msg(bufferevent_get_output(conn->be_client), "Connection reset. Using try-proxy next time.");
 	return;
+	}
       }
     }//error
 
@@ -191,6 +192,9 @@ server_event(struct bufferevent *bev, short e, void *ptr)
 
 static void
 send_req_line(conn_t *conn) {
+
+  if (conn->be_server == NULL)
+    return;
 
   char *pos = conn->url + 10;
   while (pos[0] != '/')
@@ -249,14 +253,19 @@ http_direct_process(conn_t *conn) {
 
   char *line;
   if (s->pos == STATE_REQ_LINE) {
+
+    /* In first request this won't be executed. */   
     s->pos = STATE_HEADER;
 
+    printf("CC");
     /* Process request line */
     reqest_line_process(conn);
     return;
   }
 
   prepare_connection(conn);
+  if (conn->be_server == NULL) return;
+
   if (s->pos == STATE_HEADER) {
 
     char header[64], header_v[2500];
@@ -276,12 +285,15 @@ http_direct_process(conn_t *conn) {
  
       sscanf(line, "%s %s", header, header_v);
       
-      if (strcmp(header, "Content-Length:") == 0) 
+      if (strcmp(header, "Content-Length:") == 0)  {
 	s->length = atoi(header_v);
 
+      }
       /* Skip proxy-connection */
-
+	
       if (strcmp(header, "Proxy-Connection:")) {
+
+	bufferevent_setwatermark(conn->be_client, EV_READ, 0, 8192);
 	evbuffer_add_printf(output, "%s\r\n", line);
 
       }
@@ -296,12 +308,30 @@ http_direct_process(conn_t *conn) {
   if (s->pos == STATE_BODY) {
 
     if (s->length == 0) goto end; 
+   
+    if (s->set_cb == 0) {
 
+      bufferevent_setcb(conn->be_server, read_server, write_server, server_event, conn);
+
+      bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
+      s->set_cb = 1;
+
+    }
+ 
     output = bufferevent_get_output(conn->be_server);
 
-    s->read += evbuffer_remove_buffer(buffer, output, evbuffer_get_length(buffer));
+    int outsize = (int) evbuffer_get_length(output);
+  
+    if (outsize > 0) return;
+
+    int read = evbuffer_remove_buffer(buffer, output, 4096);
+
+    s->read += read;
 
     if (s->read != s->length) return;
+
+    bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
+  
   }
   else return;
 
@@ -313,6 +343,7 @@ http_direct_process(conn_t *conn) {
   s->req_sent = 0;
   s->read = 0;
   s->length = 0;
+  s->set_cb = 0;
 
 }
 
@@ -346,74 +377,6 @@ read_client_socks_handshake(void *ptr) {
 
 }
 
-/* Return 1 if data not sent */
-/*
-static int 
-read_direct_http(void *ctx) {
-  conn_t *conn = ctx;
-
-  // e.g. GET http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html HTTP/1.1
-
-  struct parsed_url *url;
-  url = simple_parse_url(conn->url);
-
-  if (conn->tos == DIRECT) {
-    
-    if (conn->be_server == NULL) {
-      connect_server(url->host, url->port, conn);
-
-    }
-    else if (strcmp(conn->purl->host, url->host) || conn->purl->port != url->port) {
-
-      free_parsed_url(conn->purl);   
-
-      bufferevent_free(conn->be_server);
-      conn->be_server = NULL;
-
-      connect_server(url->host, url->port, conn);
-
-    }
-    conn->purl = url;
-
-  }
-  else if (strcmp(conn->purl->host, url->host) 
-	   || conn->purl->port != url->port) {
-
-    free_parsed_url(conn->purl);  
- 
-    free_parsed_url(url);
-
-    bufferevent_free(conn->be_server);
-    conn->be_server = NULL;
-
-    read_client_socks_handshake(conn);
-    
-    return 1;
-  }
-
-  struct evbuffer *output = bufferevent_get_output(conn->be_server);
-
-  char *pos = conn->url + 10;
-  while (pos[0] != '/')
-    pos++;
-
-  evbuffer_add_printf(output, "%s %s %s\r\n", conn->method, pos, conn->version);
-
-  int size = evbuffer_get_length(conn->state->header);
-  void *data = evbuffer_pullup(conn->state->header, size);
-
-  bufferevent_write(conn->be_server, data, size);
-
-  if (conn->state->length) {
-
-    size = evbuffer_get_length(conn->state->cont);
-    data = (void *) evbuffer_pullup(conn->state->cont, size);
-    bufferevent_write(conn->be_server, data, size);
-  }
-
-  return 0;
-}
-*/
 static int 
 read_direct_https(void *ctx) {
   conn_t *conn = ctx;
@@ -629,8 +592,11 @@ client_event(struct bufferevent *bev, short e, void *ptr) {
 
   /* If client closes the connection, we can safely free server conn. */
 
-  if (e & (BEV_EVENT_ERROR|BEV_EVENT_EOF)){
+  if (e & (BEV_EVENT_ERROR | BEV_EVENT_TIMEOUT | BEV_EVENT_EOF)){
     free_conn(conn);
+
+    if (e & BEV_EVENT_TIMEOUT) 
+      puts("client timeout");
   }
 }
 
@@ -643,6 +609,7 @@ accept_conn_cb(struct evconnlistener *listener,
   conn_t *conn = calloc(sizeof(conn_t), 1);
 
   conn->be_client = bev;
+
 
   bufferevent_setcb(bev, read_client_cb, NULL, client_event, conn);
   bufferevent_enable(bev, EV_READ|EV_WRITE);

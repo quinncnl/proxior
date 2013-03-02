@@ -37,7 +37,7 @@ typedef struct conn
 
 struct state {
   /* for content section */
-  int length, read; 
+  int length, read, wrote; 
   
   enum {
     STATE_REQ_LINE, //req line to be read
@@ -49,6 +49,8 @@ struct state {
   int req_sent;
 
   char *body;
+
+  int set_cb;
 
 };
 

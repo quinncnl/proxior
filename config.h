@@ -36,6 +36,7 @@ typedef struct {
   struct proxy_t *default_proxy;
   struct proxy_t *try_proxy;
   struct timeval timeout;
+  struct timeval ctimeout;
 
   char *listen_addr;
   short listen_port;

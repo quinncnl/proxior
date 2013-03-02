@@ -85,7 +85,8 @@ socks_read(struct bufferevent *bev, void *ptr) {
     struct evbuffer *rep = bufferevent_get_input(bev);
     evbuffer_drain(rep, evbuffer_get_length(rep));
 
-    server_connected(conn);
+    bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
+    bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
 
     (*(ctx->callback))(ctx->ctx);
 

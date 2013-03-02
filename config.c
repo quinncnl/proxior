@@ -215,6 +215,10 @@ void load_config(char path[])
   }
   fclose(fd);
 
+
+  cfg.ctimeout.tv_sec = 5;
+  cfg.ctimeout.tv_usec = 0;
+
 }
 
 /* Update single URL rule */
