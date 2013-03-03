@@ -1,2 +1,12 @@
 Makefile
 proxior.conf
+*.o
+test*
+a.out*
+control
+echo.c
+log
+*test
+proxior
+py*
+upload

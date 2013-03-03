@@ -142,7 +142,7 @@ server_event(struct bufferevent *bev, short e, void *ptr)
 
   else if (e & BEV_EVENT_EOF) {
     free_server(conn);
-
+    conn->server_closed = 1;
   }
   else if (e & (BEV_EVENT_ERROR|BEV_EVENT_TIMEOUT)) {
 
@@ -355,7 +355,7 @@ connect_server(char *host, int port, conn_t *conn) {
   bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
   bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
 
-  if(bufferevent_socket_connect_hostname(conn->be_server, NULL, AF_UNSPEC, host, port) == -1) {
+  if(bufferevent_socket_connect_hostname(conn->be_server, dnsbase, AF_UNSPEC, host, port) == -1) {
     perror("DNS failure\n");
     exit(1);
   }
@@ -595,8 +595,6 @@ client_event(struct bufferevent *bev, short e, void *ptr) {
   if (e & (BEV_EVENT_ERROR | BEV_EVENT_TIMEOUT | BEV_EVENT_EOF)){
     free_conn(conn);
 
-    if (e & BEV_EVENT_TIMEOUT) 
-      puts("client timeout");
   }
 }
 
@@ -609,7 +607,6 @@ accept_conn_cb(struct evconnlistener *listener,
   conn_t *conn = calloc(sizeof(conn_t), 1);
 
   conn->be_client = bev;
-
 
   bufferevent_setcb(bev, read_client_cb, NULL, client_event, conn);
   bufferevent_enable(bev, EV_READ|EV_WRITE);
@@ -624,6 +621,7 @@ start() {
   struct sockaddr_in sin;
 
   base = event_base_new();
+  dnsbase = evdns_base_new(base, 1);
 
   memset(&sin, 0, sizeof(sin));
   sin.sin_family = AF_INET;

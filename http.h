@@ -29,6 +29,8 @@ typedef struct conn
   // For CONNECT method
   short handshaked;
 
+  int server_closed;
+
   /*  Used to track current http state */
   struct state *state; 
 

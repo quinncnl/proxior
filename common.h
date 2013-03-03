@@ -13,11 +13,12 @@
 #include <errno.h>
 #include <event2/util.h>
 #include <event2/event.h>
+#include <event2/dns.h>
 #include <stdarg.h>
 
 #include <arpa/inet.h>
 
-/* We need one event base */
 struct event_base *base;
+struct evdns_base *dnsbase;
 
 #endif /* _COMMON_H_ */
