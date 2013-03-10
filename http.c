@@ -50,6 +50,10 @@ connect_server(char *host, int port, void (*callback)(conn_t *), conn_t *conn);
 void
 http_direct_process(conn_t *conn);
 
+void dis_error_msg(conn_t *conn, char *msg) {
+  error_msg(bufferevent_get_output(conn->be_client), msg);
+}
+
 void
 error_msg(struct evbuffer *output, char *msg) {
 
@@ -84,10 +88,25 @@ write_server(struct bufferevent *bev, void *ctx) {
   http_direct_process(conn);
 }
 
+void free_purl(conn_t *conn) {
+  if (conn->purl) {
+    free_parsed_url(conn->purl);
+
+    conn->purl = NULL;
+  }
+}
+
 void
 free_server(conn_t *conn) {
-  if (conn->be_server) 
+  if (conn->be_server) { 
+    
+    free_purl(conn);
     bufferevent_free(conn->be_server);
+
+#ifdef DEBUG
+    printf("CONN--: #%d\n", --openconn);
+#endif
+  }
 
   else return;
 
@@ -107,7 +126,7 @@ free_conn(conn_t *conn) {
 
   free_server(conn);
   
-  if (conn->purl) free_parsed_url(conn->purl); 
+  free_purl(conn);
   free(conn);
 }
 
@@ -178,10 +197,8 @@ server_event(struct bufferevent *bev, short e, void *ptr)
 	if (code == ECONNRESET) {
 	perror("Connection reset. Added to temperary try-list"); 
 
-	free_server(conn);
-
 	add_to_trylist(conn->purl->host);
-
+	free_server(conn);
 	error_msg(bufferevent_get_output(conn->be_client), "Connection reset. Using try-proxy next time.");
 	return;
 	}
@@ -219,11 +236,11 @@ prepare_connection(conn_t *conn) {
 
     if (conn->be_server == NULL) {
       connect_server(url->host, url->port, http_direct_process, conn);
+      free_parsed_url(url);
+
       return 1;
     }
     else if (conn->purl && (strcmp(conn->purl->host, url->host) || conn->purl->port != url->port)) {
-
-      free_parsed_url(conn->purl);   
 
       free_server(conn);
 
@@ -269,7 +286,8 @@ http_direct_process(conn_t *conn) {
     return;
   }
 
-  if (prepare_connection(conn)) return;
+  if (prepare_connection(conn)) 
+    return;
 
   if (conn->be_server == NULL) return;
 
@@ -362,12 +380,20 @@ struct conn_arg {
   char host[512];
 };
 
-void cb(int result, char type, int count,
+static void 
+dns_cb(int result, char type, int count,
 	int ttl, void *addresses, void *arg) {
 
   struct conn_arg * carg = arg;
-  struct sockaddr_in sin;
+
   conn_t *conn = carg->conn;
+
+  if (result != DNS_ERR_NONE) {
+    dis_error_msg(conn, "Unable to resolve this domain.");
+    return;
+  }
+
+  struct sockaddr_in sin;
 
   memset(&sin, 0, sizeof(sin));
   sin.sin_family = AF_INET;
@@ -376,31 +402,31 @@ void cb(int result, char type, int count,
 
   sin.sin_port = htons(carg->port);
 
+  conn->be_server = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
   if (bufferevent_socket_connect(conn->be_server,
 				 (struct sockaddr *)&sin, sizeof(sin)) < 0) {
     /* Error starting connection */
-    puts("ER");
+    dis_error_msg(conn, "Cannot connect to remote server.");
+    return;
   }
+
+
+#ifdef DEBUG
+  printf("DNS CB CONN++: #%d\n", ++openconn);
+#endif
 
   bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
   bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
 
   hashmap_insert_ip(cfg.dnsmap, carg->host, addresses);
+
   carg->callback(conn);
   free(carg);
-}
-
-int isValidIpAddress(char *ipAddress)
-{
-    struct sockaddr_in sa;
-    int result = inet_pton(AF_INET, ipAddress, &(sa.sin_addr));
-    return result != 0;
 }
 
 static void
 connect_server(char *host, int port, void (*callback)(conn_t *), conn_t *conn) {
 
-  conn->be_server = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
 
   struct hashentry_s *entry = 
     hashmap_find_head(cfg.dnsmap, host);
@@ -416,28 +442,33 @@ connect_server(char *host, int port, void (*callback)(conn_t *), conn_t *conn) {
     arg->conn = conn;
     strcpy(arg->host, host);
 
-    evdns_base_resolve_ipv4(dnsbase, host, DNS_QUERY_NO_SEARCH, cb, arg);
+    evdns_base_resolve_ipv4(dnsbase, host, DNS_QUERY_NO_SEARCH, dns_cb, arg);
+    return;
   }
-  else {
 
-    sin.sin_family = AF_INET;
-    if (isip == 0)
-      memcpy(&sin.sin_addr.s_addr, entry->data, 4);
-    //    puts(evutil_inet_ntop(AF_INET,&sin.sin_addr.s_addr, buf, 128));
+  sin.sin_family = AF_INET;
+  if (isip == 0)
+    memcpy(&sin.sin_addr.s_addr, entry->data, 4);
 
-    sin.sin_port = htons(port);
+  sin.sin_port = htons(port);
 
-    if (bufferevent_socket_connect(conn->be_server,
-				   (struct sockaddr *)&sin, sizeof(sin)) < 0) {
-      /* Error starting connection */
-      puts("ER");
-    }
-
-    bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
-    bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
-
-    callback(conn);
+  conn->be_server = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
+  if (bufferevent_socket_connect(conn->be_server,
+				 (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+    /* Error starting connection */
+    dis_error_msg(conn, "Cannot connect to remote server.");
+    return;
   }
+
+
+#ifdef DEBUG
+  printf("CACHED DNS CONN++: #%d\n", ++openconn);
+#endif
+
+  bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
+  bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
+
+  callback(conn);
 
 }
 
@@ -448,6 +479,7 @@ read_client_socks_handshake(void *ptr) {
   if (conn->be_server == NULL) {
 
     struct parsed_url *url = simple_parse_url(conn->url);
+    free_purl(conn);
     conn->purl = url;
   
     conn->be_server = socks_connect(url->host, url->port, read_client_direct, ptr);
@@ -548,13 +580,19 @@ read_client_http_proxy_handshake(void *ptr) {
 
   bufferevent_read_buffer(conn->be_client, output);
 
-  bufferevent_setcb(bevs, NULL, NULL, server_event, conn);
+  bufferevent_setcb(bevs, read_server, NULL, server_event, conn);
   bufferevent_enable(bevs, EV_READ|EV_WRITE);
 
-  if (bufferevent_socket_connect_hostname(bevs, NULL, AF_UNSPEC, conn->proxy->host, conn->proxy->port) == -1) {
+  if (bufferevent_socket_connect_hostname(bevs, dnsbase, AF_UNSPEC, conn->proxy->host, conn->proxy->port) == -1) {
     perror("DNS failure\n");
     exit(1);
   }
+
+  
+#ifdef DEBUG
+  printf("PROXY CONN++: #%d\n", ++openconn);
+#endif
+
 }
 
 static void
@@ -726,6 +764,6 @@ start() {
     perror("Unable to create listener");
     exit(1);
   }
-
+  openconn = 0;
   event_base_dispatch(base);
 }

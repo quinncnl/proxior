@@ -48,6 +48,7 @@ typedef struct {
 } config;
 
 config cfg;
+int openconn;
 
 void load_config(char *);
 

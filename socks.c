@@ -79,6 +79,8 @@ socks_read(struct bufferevent *bev, void *ptr) {
 
     if (hs2[1]) {
       error_msg(bufferevent_get_output(conn->be_client), "Cannot connect to socks server");
+      free(ctx);
+      free_server(conn);
       return;
     }
 
@@ -89,7 +91,7 @@ socks_read(struct bufferevent *bev, void *ptr) {
     bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
 
     (*(ctx->callback))(ctx->ctx);
-
+    free(ctx);
   }
 }
 

@@ -117,6 +117,9 @@ hashmap_insert (hashmap_t map, char *rule)
         return 0;
 }
 
+
+/* I just copied the code and did little modification. Should rewrite inserting method in next version. */
+
 int
 hashmap_insert_ip (hashmap_t map, char *key, void *ip)
 {
@@ -129,7 +132,6 @@ hashmap_insert_ip (hashmap_t map, char *key, void *ip)
 
 	/* Keep out duplications */
 
-	puts(key);
 	struct hashentry_s *it = map->buckets[hash].head;
 	while (it) {
 	  if (strcmp(key, it->data) == 0)
