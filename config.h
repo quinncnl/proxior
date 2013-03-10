@@ -38,6 +38,8 @@ typedef struct {
   struct timeval timeout;
   struct timeval ctimeout;
 
+  struct hashmap_s *dnsmap;
+
   char *listen_addr;
   short listen_port;
   int foreground;

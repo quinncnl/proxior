@@ -15,6 +15,7 @@ typedef struct conn
   char method[10];
   char version[10];
 
+
   // type of service
   enum {
     CONN_DIRECT = 0x01,

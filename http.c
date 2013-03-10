@@ -45,7 +45,7 @@ static int
 reqest_line_process(conn_t *conn);
 
 static void
-connect_server(char *host, int port, conn_t *conn);
+connect_server(char *host, int port, void (*callback)(conn_t *), conn_t *conn);
 
 void
 http_direct_process(conn_t *conn);
@@ -115,6 +115,7 @@ static void
 set_conn_proxy(conn_t *conn, struct proxy_t *proxy) {
 
   conn->proxy = proxy;
+
   if (proxy == NULL) {
     conn->tos = CONN_DIRECT;
     return ;
@@ -167,6 +168,8 @@ server_event(struct bufferevent *bev, short e, void *ptr)
 	else {
 
 	  error_msg(bufferevent_get_output(conn->be_client), "No try-proxy set. Direct connection failed. Check log.");
+
+	  free_conn(conn);
 	  return;
 	}
 
@@ -204,7 +207,7 @@ send_req_line(conn_t *conn) {
 
 }
 
-static void
+static int
 prepare_connection(conn_t *conn) {
 
   struct state *s = conn->state; 
@@ -214,16 +217,17 @@ prepare_connection(conn_t *conn) {
     struct parsed_url *url;
     url = simple_parse_url(conn->url);
 
-    if (conn->be_server == NULL) 
-      connect_server(url->host, url->port, conn);
-
-    else if (strcmp(conn->purl->host, url->host) || conn->purl->port != url->port) {
+    if (conn->be_server == NULL) {
+      connect_server(url->host, url->port, http_direct_process, conn);
+      return 1;
+    }
+    else if (conn->purl && (strcmp(conn->purl->host, url->host) || conn->purl->port != url->port)) {
 
       free_parsed_url(conn->purl);   
 
       free_server(conn);
 
-      connect_server(url->host, url->port, conn);
+      connect_server(url->host, url->port, http_direct_process, conn);
 
     }
 
@@ -232,6 +236,8 @@ prepare_connection(conn_t *conn) {
 
     s->req_sent = 1;
   }
+
+  return 0;
 }
 
 
@@ -263,7 +269,8 @@ http_direct_process(conn_t *conn) {
     return;
   }
 
-  prepare_connection(conn);
+  if (prepare_connection(conn)) return;
+
   if (conn->be_server == NULL) return;
 
   if (s->pos == STATE_HEADER) {
@@ -347,18 +354,91 @@ http_direct_process(conn_t *conn) {
 
 }
 
-static void
-connect_server(char *host, int port, conn_t *conn) {
+struct conn_arg {
+  int port;
+  void (*callback)(conn_t *);
+  conn_t *conn;
 
-  conn->be_server = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
+  char host[512];
+};
+
+void cb(int result, char type, int count,
+	int ttl, void *addresses, void *arg) {
+
+  struct conn_arg * carg = arg;
+  struct sockaddr_in sin;
+  conn_t *conn = carg->conn;
+
+  memset(&sin, 0, sizeof(sin));
+  sin.sin_family = AF_INET;
+
+  memcpy(&sin.sin_addr.s_addr, addresses, 4);
+
+  sin.sin_port = htons(carg->port);
+
+  if (bufferevent_socket_connect(conn->be_server,
+				 (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+    /* Error starting connection */
+    puts("ER");
+  }
 
   bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
   bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
 
-  if(bufferevent_socket_connect_hostname(conn->be_server, dnsbase, AF_UNSPEC, host, port) == -1) {
-    perror("DNS failure\n");
-    exit(1);
+  hashmap_insert_ip(cfg.dnsmap, carg->host, addresses);
+  carg->callback(conn);
+  free(carg);
+}
+
+int isValidIpAddress(char *ipAddress)
+{
+    struct sockaddr_in sa;
+    int result = inet_pton(AF_INET, ipAddress, &(sa.sin_addr));
+    return result != 0;
+}
+
+static void
+connect_server(char *host, int port, void (*callback)(conn_t *), conn_t *conn) {
+
+  conn->be_server = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
+
+  struct hashentry_s *entry = 
+    hashmap_find_head(cfg.dnsmap, host);
+
+  struct sockaddr_in sin;
+  int isip = inet_pton(AF_INET, host, &(sin.sin_addr));
+
+  if (entry == NULL && isip == 0) {
+
+    struct conn_arg *arg = malloc(sizeof(struct conn_arg));
+    arg->port = port;
+    arg->callback = callback;
+    arg->conn = conn;
+    strcpy(arg->host, host);
+
+    evdns_base_resolve_ipv4(dnsbase, host, DNS_QUERY_NO_SEARCH, cb, arg);
   }
+  else {
+
+    sin.sin_family = AF_INET;
+    if (isip == 0)
+      memcpy(&sin.sin_addr.s_addr, entry->data, 4);
+    //    puts(evutil_inet_ntop(AF_INET,&sin.sin_addr.s_addr, buf, 128));
+
+    sin.sin_port = htons(port);
+
+    if (bufferevent_socket_connect(conn->be_server,
+				   (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+      /* Error starting connection */
+      puts("ER");
+    }
+
+    bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
+    bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
+
+    callback(conn);
+  }
+
 }
 
 static void
@@ -387,7 +467,15 @@ read_direct_https(void *ctx) {
 }
 
 static void 
-read_direct_https_handshake(void *ctx) {
+read_direct_https_handshake_p2(conn_t *conn) {
+
+  evbuffer_add_printf(bufferevent_get_output(conn->be_client), "HTTP/1.1 200 Connection established\r\n\r\n");
+
+  conn->handshaked = 1;
+}
+
+static void 
+read_direct_https_handshake(conn_t *ctx) {
   conn_t *conn = ctx;
 
   // e.g. CONNECT www.wikipedia.org:443 HTTP/1.1
@@ -410,9 +498,12 @@ read_direct_https_handshake(void *ctx) {
     free(tmp);
   }
 
-  if (conn->tos == CONN_DIRECT)
-    connect_server(host, port, conn);
-  
+  if (conn->tos == CONN_DIRECT) {
+    connect_server(host, port, read_direct_https_handshake_p2, conn);
+    free(url);
+    return;
+  }
+
   free(url);
   evbuffer_add_printf(bufferevent_get_output(conn->be_client), "HTTP/1.1 200 Connection established\r\n\r\n");
 

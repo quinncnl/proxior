@@ -218,7 +218,7 @@ void load_config(char path[])
 
   cfg.ctimeout.tv_sec = 5;
   cfg.ctimeout.tv_usec = 0;
-
+  cfg.dnsmap = hashmap_create(1000);
 }
 
 /* Update single URL rule */

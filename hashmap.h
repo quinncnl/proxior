@@ -30,6 +30,9 @@ hashmap_create (unsigned int nbuckets) ;
 int
 hashmap_insert (hashmap_t map, char *rule);
 
+int
+hashmap_insert_ip (hashmap_t map, char *key, void *ip);
+
 struct hashentry_s *
 hashmap_find_head(hashmap_t map, const char *key);
 

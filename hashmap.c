@@ -117,6 +117,55 @@ hashmap_insert (hashmap_t map, char *rule)
         return 0;
 }
 
+int
+hashmap_insert_ip (hashmap_t map, char *key, void *ip)
+{
+        struct hashentry_s *ptr;
+        unsigned int hash;
+        char *key_copy;
+        char *data_copy = malloc(4);
+
+        hash = hashfunc (key, map->size);
+
+	/* Keep out duplications */
+
+	puts(key);
+	struct hashentry_s *it = map->buckets[hash].head;
+	while (it) {
+	  if (strcmp(key, it->data) == 0)
+	    return 0;
+
+	  it = it->next;
+	}
+
+        key_copy = strdup (key);
+
+        data_copy = memcpy(data_copy, ip, 4);
+
+        ptr = (struct hashentry_s *) malloc (sizeof (struct hashentry_s));
+        if (!ptr) {
+                free (key_copy);
+                free (data_copy);
+                return -1;
+        }
+
+        ptr->key = key_copy;
+        ptr->data = data_copy;
+
+        ptr->next = NULL;
+        ptr->prev = map->buckets[hash].tail;
+        if (map->buckets[hash].tail)
+                map->buckets[hash].tail->next = ptr;
+
+        map->buckets[hash].tail = ptr;
+        if (!map->buckets[hash].head)
+                map->buckets[hash].head = ptr;
+
+        map->end_iterator++;
+        return 0;
+}
+
+
 /* Find the first key match. */
 
 struct hashentry_s *
