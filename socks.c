@@ -87,6 +87,9 @@ socks_read(struct bufferevent *bev, void *ptr) {
     struct evbuffer *rep = bufferevent_get_input(bev);
     evbuffer_drain(rep, evbuffer_get_length(rep));
 
+    if (conn->be_server == NULL) 
+      return;
+
     bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
     bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
 
@@ -114,7 +117,11 @@ socks_connect(char *host, unsigned short port, void (*callback)(void *), void *p
   bufferevent_setcb(bev, socks_read, NULL, socks_event, ctx);
   bufferevent_enable(bev, EV_READ|EV_WRITE);
 
-  bufferevent_socket_connect_hostname(bev, NULL, AF_UNSPEC, conn->proxy->host, conn->proxy->port);
+  bufferevent_socket_connect_hostname(bev, dnsbase, AF_UNSPEC, conn->proxy->host, conn->proxy->port);
+
+#ifdef DEBUG
+    printf("CONN SOCKS ++: #%d\n", ++openconn);
+#endif
 
   char req[3];
   req[0] = 0x05;

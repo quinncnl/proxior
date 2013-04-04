@@ -27,6 +27,8 @@
 
 struct parsed_url *simple_parse_url(char *ori_url) {
 
+  if (strlen(ori_url) == 0) return NULL;
+
   char *s_port, *domain;
   struct parsed_url *ret = malloc(sizeof(struct parsed_url));
   ret->url = malloc(strlen(ori_url)+1);
@@ -50,8 +52,11 @@ struct parsed_url *simple_parse_url(char *ori_url) {
 
 void
 free_parsed_url (struct parsed_url *url) {
+  if (url != NULL) return;
+
   if (url->url) 
     free(url->url);
+
   free(url->host);
   free(url);
 }

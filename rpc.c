@@ -229,6 +229,9 @@ void rpc(struct bufferevent*bev, void *ctx) {
 
   conn_t *conn = ctx;
   struct state *s = conn->state; 
+
+  if (conn->be_client == NULL) return;
+
   struct evbuffer *buffer = bufferevent_get_input(conn->be_client);
 
 

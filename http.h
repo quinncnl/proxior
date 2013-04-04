@@ -9,12 +9,12 @@ extern config cfg;
 
 typedef struct conn
 {
-  struct bufferevent *be_client, *be_server;
   char url[MAX_URL_LEN];
   struct parsed_url *purl;
   char method[10];
   char version[10];
 
+  struct bufferevent *be_client, *be_server;
 
   // type of service
   enum {

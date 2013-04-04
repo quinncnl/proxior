@@ -51,6 +51,7 @@ void
 http_direct_process(conn_t *conn);
 
 void dis_error_msg(conn_t *conn, char *msg) {
+  if (conn->be_client == NULL) return;
   error_msg(bufferevent_get_output(conn->be_client), msg);
 }
 
@@ -76,7 +77,7 @@ void
 read_server(struct bufferevent *bev, void *ctx) {
   conn_t *conn = ctx;
 
-  if (bufferevent_read_buffer(bev, bufferevent_get_output(conn->be_client))) 
+  if (conn->be_client && bufferevent_read_buffer(bev, bufferevent_get_output(conn->be_client))) 
     fputs("Error reading from server.", stderr);
 
 }
@@ -98,19 +99,17 @@ void free_purl(conn_t *conn) {
 
 void
 free_server(conn_t *conn) {
-  if (conn->be_server) { 
+  if (conn->be_server == NULL) return;
     
-    free_purl(conn);
-    bufferevent_free(conn->be_server);
-
-#ifdef DEBUG
-    printf("CONN--: #%d\n", --openconn);
-#endif
-  }
-
-  else return;
+  free_purl(conn);
+  bufferevent_free(conn->be_server);
 
   conn->be_server = NULL;
+
+#ifdef DEBUG
+  printf("CONN--: #%d\n", --openconn);
+#endif
+
 }
 
 /* Close both client and server connection. */
@@ -118,16 +117,18 @@ free_server(conn_t *conn) {
 void
 free_conn(conn_t *conn) {
 
-  if (conn->state) {
+  if (conn->state) 
     free(conn->state);
-  }
 
-  bufferevent_free(conn->be_client);
+  if (conn->be_client)
+    bufferevent_free(conn->be_client);
 
+  conn->be_client = NULL;
   free_server(conn);
   
   free_purl(conn);
   free(conn);
+  conn = NULL;
 }
 
 static void
@@ -195,26 +196,28 @@ server_event(struct bufferevent *bev, short e, void *ptr)
       }
       else {
 	if (code == ECONNRESET) {
-	perror("Connection reset. Added to temperary try-list"); 
+	  if (conn->purl == NULL || conn->purl->host == NULL) {
+	    free_conn(conn);
+	    return;
+	  }
+	  
+	  perror("Connection reset. Added to temperary try-list"); 
 
-	add_to_trylist(conn->purl->host);
-	free_server(conn);
-	error_msg(bufferevent_get_output(conn->be_client), "Connection reset. Using try-proxy next time.");
-	return;
+	  add_to_trylist(conn->purl->host);
+	  free_server(conn);
+	  error_msg(bufferevent_get_output(conn->be_client), "Connection reset. Using try-proxy next time.");
+	  return;
 	}
       }
     }//error
 
-    free_server(conn);
+    free_conn(conn);
 
   }
 }
 
 static void
 send_req_line(conn_t *conn) {
-
-  if (conn->be_server == NULL)
-    return;
 
   char *pos = conn->url + 10;
   while (pos[0] != '/')
@@ -229,11 +232,12 @@ prepare_connection(conn_t *conn) {
 
   struct state *s = conn->state; 
 
+  struct parsed_url *url;
+
   if (!s->req_sent) {
+    // Request line not sent.
 
-    struct parsed_url *url;
     url = simple_parse_url(conn->url);
-
     if (conn->be_server == NULL) {
       connect_server(url->host, url->port, http_direct_process, conn);
       free_parsed_url(url);
@@ -245,13 +249,15 @@ prepare_connection(conn_t *conn) {
       free_server(conn);
 
       connect_server(url->host, url->port, http_direct_process, conn);
-
+      free_parsed_url(url);
+      return 1;
     }
 
     conn->purl =  url;
     send_req_line(conn);
-
     s->req_sent = 1;
+
+    free_parsed_url(url);
   }
 
   return 0;
@@ -264,23 +270,26 @@ prepare_connection(conn_t *conn) {
 void
 http_direct_process(conn_t *conn) {
 
+  if (conn->be_client == NULL) return;
   /* Keep a state */
   struct state *s = conn->state; 
-  struct evbuffer *buffer = bufferevent_get_input(conn->be_client);
+  struct evbuffer *buffer;
   struct evbuffer *output;
-  
+
   if (s == NULL) {
     conn->state = s = calloc(sizeof(struct state), 1);
     s->pos = STATE_HEADER;
   }
 
+  buffer = bufferevent_get_input(conn->be_client);
+
   char *line;
   if (s->pos == STATE_REQ_LINE) {
 
-    /* In first request this won't be executed. */   
+    /* In the first request this won't be executed. */   
     s->pos = STATE_HEADER;
 
-    printf("CC");
+    printf("CC ");
     /* Process request line */
     reqest_line_process(conn);
     return;
@@ -288,8 +297,6 @@ http_direct_process(conn_t *conn) {
 
   if (prepare_connection(conn)) 
     return;
-
-  if (conn->be_server == NULL) return;
 
   if (s->pos == STATE_HEADER) {
 
@@ -312,15 +319,13 @@ http_direct_process(conn_t *conn) {
       
       if (strcmp(header, "Content-Length:") == 0)  {
 	s->length = atoi(header_v);
-
+	bufferevent_setwatermark(conn->be_client, EV_READ, 0, 8192);
+	evbuffer_add_printf(output, "%s\r\n", line);
       }
       /* Skip proxy-connection */
 	
       if (strcmp(header, "Proxy-Connection:")) {
-
-	bufferevent_setwatermark(conn->be_client, EV_READ, 0, 8192);
 	evbuffer_add_printf(output, "%s\r\n", line);
-
       }
       free(line);
     } // while
@@ -424,6 +429,8 @@ dns_cb(int result, char type, int count,
   free(carg);
 }
 
+/* Connect server directly. */
+
 static void
 connect_server(char *host, int port, void (*callback)(conn_t *), conn_t *conn) {
 
@@ -453,6 +460,9 @@ connect_server(char *host, int port, void (*callback)(conn_t *), conn_t *conn) {
   sin.sin_port = htons(port);
 
   conn->be_server = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
+
+  bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
+
   if (bufferevent_socket_connect(conn->be_server,
 				 (struct sockaddr *)&sin, sizeof(sin)) < 0) {
     /* Error starting connection */
@@ -460,12 +470,10 @@ connect_server(char *host, int port, void (*callback)(conn_t *), conn_t *conn) {
     return;
   }
 
-
 #ifdef DEBUG
   printf("CACHED DNS CONN++: #%d\n", ++openconn);
 #endif
 
-  bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
   bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
 
   callback(conn);
@@ -501,6 +509,7 @@ read_direct_https(void *ctx) {
 static void 
 read_direct_https_handshake_p2(conn_t *conn) {
 
+  if (conn->be_client == NULL) return;
   evbuffer_add_printf(bufferevent_get_output(conn->be_client), "HTTP/1.1 200 Connection established\r\n\r\n");
 
   conn->handshaked = 1;
@@ -559,6 +568,7 @@ read_client_direct(void *ctx) {
       read_direct_https_handshake(ctx);
   }
   else {
+
     http_direct_process(conn);
   }
 }
@@ -617,7 +627,6 @@ init_remote_conn(conn_t *conn) {
 
     }
     else if (conn->proxy->type == PROXY_SOCKS) {
-
       read_client_socks_handshake(conn);
     }
   }
@@ -690,6 +699,7 @@ reqest_line_process(conn_t *conn) {
     return 0;
   }
 
+  free_server(conn);
   set_conn_proxy(conn, match_list(conn->url));
   init_remote_conn(conn);
   free(line);
