@@ -42,4 +42,7 @@ hashmap_find_next(struct hashentry_s *ent, const char *key);
 void
 hashmap_remove (hashmap_t map, const char *rule);
 
+void
+hashmap_clear (hashmap_t map);
+
 #endif /* _HASHMAP_H_ */

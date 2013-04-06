@@ -26,6 +26,8 @@
 #include <assert.h>
 #include <arpa/inet.h>
 
+#define DNS_CACHE_NUM 100
+
 struct rulelist *
 get_rulelist(char *listname) {
   struct rulelist *rl = cfg.rulelist_head;
@@ -218,7 +220,7 @@ void load_config(char path[])
 
   cfg.ctimeout.tv_sec = 5;
   cfg.ctimeout.tv_usec = 0;
-  cfg.dnsmap = hashmap_create(1000);
+  cfg.dnsmap = hashmap_create(DNS_CACHE_NUM);
 }
 
 /* Update single URL rule */

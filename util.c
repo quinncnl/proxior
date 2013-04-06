@@ -31,14 +31,13 @@ struct parsed_url *simple_parse_url(char *ori_url) {
 
   char *s_port, *domain;
   struct parsed_url *ret = malloc(sizeof(struct parsed_url));
-  ret->url = malloc(strlen(ori_url)+1);
+  char *url = strdup(ori_url);
 
-  strcpy(ret->url, ori_url);
-
-  strtok(ret->url, "//");
+  strtok(url, "//");
   domain = strtok(NULL, "/");
 
-  if (domain == NULL) domain = ret->url;
+  if (domain == NULL) 
+    domain = url;
 
   domain = strtok(domain, ":");
 
@@ -47,16 +46,16 @@ struct parsed_url *simple_parse_url(char *ori_url) {
   else ret->port = atoi(s_port);
 
   ret->host = strdup(domain);
+
+  free(url);
+  //  printf("url created: %s\n", domain);
   return ret;
 }
 
 void
 free_parsed_url (struct parsed_url *url) {
-  if (url != NULL) return;
-
-  if (url->url) 
-    free(url->url);
-
+  //  printf("url freed: %s\n", url->host);
+  if (url == NULL) return;
   free(url->host);
   free(url);
 }

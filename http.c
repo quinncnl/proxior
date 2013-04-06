@@ -99,11 +99,12 @@ void free_purl(conn_t *conn) {
 
 void
 free_server(conn_t *conn) {
+
   if (conn->be_server == NULL) return;
     
   free_purl(conn);
-  bufferevent_free(conn->be_server);
 
+  bufferevent_free(conn->be_server);
   conn->be_server = NULL;
 
 #ifdef DEBUG
@@ -119,14 +120,14 @@ free_conn(conn_t *conn) {
 
   if (conn->state) 
     free(conn->state);
+  conn->state = NULL;
 
   if (conn->be_client)
     bufferevent_free(conn->be_client);
-
   conn->be_client = NULL;
+
   free_server(conn);
   
-  free_purl(conn);
   free(conn);
   conn = NULL;
 }
@@ -162,56 +163,62 @@ server_event(struct bufferevent *bev, short e, void *ptr)
     bufferevent_set_timeouts(conn->be_server, &cfg.timeout, &cfg.timeout);
 
   else if (e & BEV_EVENT_EOF) {
-    free_server(conn);
-    conn->server_closed = 1;
+    puts("server eof");
+    if (conn->be_client == NULL) return;
+
+    int left = evbuffer_get_length(bufferevent_get_output(conn->be_client)) + 
+      evbuffer_get_length(bufferevent_get_input(conn->be_server)) + 
+      evbuffer_get_length(bufferevent_get_output(conn->be_server));
+
+    if (left == 0) {
+      free_conn(conn);
+    }
+    else {
+      conn->server_closed = 1;
+    }
+
   }
-  else if (e & (BEV_EVENT_ERROR|BEV_EVENT_TIMEOUT)) {
+  else if (e & (BEV_EVENT_ERROR)) {
+    int code = evutil_socket_geterror(bufferevent_getfd(conn->be_server)); 
 
-    if (e & BEV_EVENT_ERROR) {
+    if (code != EAGAIN && code != EPIPE) 
 
-      int code = evutil_socket_geterror(bufferevent_getfd(conn->be_server)); 
-
-      if (code != EAGAIN && code != EPIPE) 
-
-	log_error(code,  evutil_socket_error_to_string(code), conn->url, conn->proxy);
+      log_error(code,  evutil_socket_error_to_string(code), conn->url, conn->proxy);
 
      
-      if (conn->proxy == cfg.try_proxy) {
-	if (cfg.try_proxy != NULL) {
-	  char msg1[50] =  "Error connecting to proxy ";
-	  strcat(msg1, conn->proxy->name);
-	  puts(msg1);
-	  error_msg(bufferevent_get_output(conn->be_client), msg1);
-	  return;
-
-	}
-	else {
-
-	  error_msg(bufferevent_get_output(conn->be_client), "No try-proxy set. Direct connection failed. Check log.");
-
-	  free_conn(conn);
-	  return;
-	}
+    if (conn->proxy == cfg.try_proxy) {
+      if (cfg.try_proxy != NULL) {
+	char msg1[50] =  "Error connecting to proxy ";
+	strcat(msg1, conn->proxy->name);
+	puts(msg1);
+	error_msg(bufferevent_get_output(conn->be_client), msg1);
+	return;
 
       }
       else {
-	if (code == ECONNRESET) {
-	  if (conn->purl == NULL || conn->purl->host == NULL) {
-	    free_conn(conn);
-	    return;
-	  }
-	  
-	  perror("Connection reset. Added to temperary try-list"); 
 
-	  add_to_trylist(conn->purl->host);
-	  free_server(conn);
-	  error_msg(bufferevent_get_output(conn->be_client), "Connection reset. Using try-proxy next time.");
+	error_msg(bufferevent_get_output(conn->be_client), "No try-proxy set. Direct connection failed. Check log.");
+
+	free_conn(conn);
+	return;
+      }
+
+    }
+    else {
+      if (code == ECONNRESET) {
+	if (conn->purl == NULL || conn->purl->host == NULL) {
+	  free_conn(conn);
 	  return;
 	}
-      }
-    }//error
+	  
+	perror("Connection reset. Added to temperary try-list"); 
 
-    free_conn(conn);
+	add_to_trylist(conn->purl->host);
+	free_server(conn);
+	error_msg(bufferevent_get_output(conn->be_client), "Connection reset. Using try-proxy next time.");
+	return;
+      }
+    }
 
   }
 }
@@ -224,7 +231,6 @@ send_req_line(conn_t *conn) {
     pos++;
 
   evbuffer_add_printf(bufferevent_get_output(conn->be_server), "%s %s %s\r\n", conn->method, pos, conn->version);
-
 }
 
 static int
@@ -237,27 +243,41 @@ prepare_connection(conn_t *conn) {
   if (!s->req_sent) {
     // Request line not sent.
 
+    /* Test if connecting to a different host */
+
     url = simple_parse_url(conn->url);
     if (conn->be_server == NULL) {
-      connect_server(url->host, url->port, http_direct_process, conn);
-      free_parsed_url(url);
 
+      connect_server(url->host, url->port, http_direct_process, conn);
+      
+      conn->purl = url;
       return 1;
     }
     else if (conn->purl && (strcmp(conn->purl->host, url->host) || conn->purl->port != url->port)) {
 
+      if (conn->proxy) {
+	//socks5
+	free_server(conn);
+	init_remote_conn(conn);
+	free_parsed_url(url);
+	return -1;
+      }
+
       free_server(conn);
 
       connect_server(url->host, url->port, http_direct_process, conn);
-      free_parsed_url(url);
+
+      free_parsed_url(conn->purl);
+      conn->purl = url;
+
       return 1;
     }
+    else {
+      free_parsed_url(url);
+      send_req_line(conn);
 
-    conn->purl =  url;
-    send_req_line(conn);
-    s->req_sent = 1;
-
-    free_parsed_url(url);
+      s->req_sent = 1;
+    }
   }
 
   return 0;
@@ -284,21 +304,22 @@ http_direct_process(conn_t *conn) {
   buffer = bufferevent_get_input(conn->be_client);
 
   char *line;
+
   if (s->pos == STATE_REQ_LINE) {
 
     /* In the first request this won't be executed. */   
     s->pos = STATE_HEADER;
 
-    printf("CC ");
+    printf("CC:");
     /* Process request line */
-    reqest_line_process(conn);
-    return;
+    if (reqest_line_process(conn)) 
+      return;
   }
 
-  if (prepare_connection(conn)) 
-    return;
-
   if (s->pos == STATE_HEADER) {
+
+    if (prepare_connection(conn)) 
+      return;
 
     char header[64], header_v[2500];
     
@@ -319,14 +340,15 @@ http_direct_process(conn_t *conn) {
       
       if (strcmp(header, "Content-Length:") == 0)  {
 	s->length = atoi(header_v);
-	bufferevent_setwatermark(conn->be_client, EV_READ, 0, 8192);
-	evbuffer_add_printf(output, "%s\r\n", line);
+	bufferevent_setwatermark(conn->be_client, EV_READ, 0, 2048);
+
       }
       /* Skip proxy-connection */
 	
       if (strcmp(header, "Proxy-Connection:")) {
 	evbuffer_add_printf(output, "%s\r\n", line);
       }
+
       free(line);
     } // while
 
@@ -351,13 +373,13 @@ http_direct_process(conn_t *conn) {
     output = bufferevent_get_output(conn->be_server);
 
     int outsize = (int) evbuffer_get_length(output);
-  
+
     if (outsize > 0) return;
 
     int read = evbuffer_remove_buffer(buffer, output, 4096);
 
     s->read += read;
-
+    //    printf("%d %d\n", s->read, s->length);
     if (s->read != s->length) return;
 
     bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
@@ -415,11 +437,6 @@ dns_cb(int result, char type, int count,
     return;
   }
 
-
-#ifdef DEBUG
-  printf("DNS CB CONN++: #%d\n", ++openconn);
-#endif
-
   bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
   bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
 
@@ -452,6 +469,7 @@ connect_server(char *host, int port, void (*callback)(conn_t *), conn_t *conn) {
     evdns_base_resolve_ipv4(dnsbase, host, DNS_QUERY_NO_SEARCH, dns_cb, arg);
     return;
   }
+    
 
   sin.sin_family = AF_INET;
   if (isip == 0)
@@ -469,10 +487,6 @@ connect_server(char *host, int port, void (*callback)(conn_t *), conn_t *conn) {
     dis_error_msg(conn, "Cannot connect to remote server.");
     return;
   }
-
-#ifdef DEBUG
-  printf("CACHED DNS CONN++: #%d\n", ++openconn);
-#endif
 
   bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
 
@@ -627,6 +641,7 @@ init_remote_conn(conn_t *conn) {
 
     }
     else if (conn->proxy->type == PROXY_SOCKS) {
+
       read_client_socks_handshake(conn);
     }
   }
@@ -696,14 +711,19 @@ reqest_line_process(conn_t *conn) {
     bufferevent_setcb(conn->be_client, rpc, NULL, client_event, conn);
 
     free(line);
+    return 1;
+  }
+
+  struct proxy_t *proxy = match_list(conn->url);
+  if (proxy == conn->proxy && conn->be_server != NULL){
+    // only socks5 or direct here
+    free(line);
     return 0;
   }
 
   free_server(conn);
-  set_conn_proxy(conn, match_list(conn->url));
+  set_conn_proxy(conn, proxy);
   init_remote_conn(conn);
-  free(line);
-  return 0;
 
  fail:
   free(line);
@@ -724,6 +744,22 @@ read_client_cb(struct bufferevent *bev, void *ctx) {
 
   reqest_line_process(conn);
 }
+
+
+static void
+write_client_cb(struct bufferevent *bev, void *ctx) {
+  conn_t *conn = ctx;
+  if (conn->be_server == NULL) return;
+
+  int left = evbuffer_get_length(bufferevent_get_input(conn->be_client)) + evbuffer_get_length(bufferevent_get_output(conn->be_server));
+
+  if (conn->server_closed && left == 0) {
+    free_conn(conn);
+  }
+  else
+    conn->server_closed = 0;
+}
+
 
 static void 
 client_event(struct bufferevent *bev, short e, void *ptr) {
@@ -747,10 +783,16 @@ accept_conn_cb(struct evconnlistener *listener,
 
   conn->be_client = bev;
 
-  bufferevent_setcb(bev, read_client_cb, NULL, client_event, conn);
+  bufferevent_setcb(bev, read_client_cb, write_client_cb, client_event, conn);
   bufferevent_enable(bev, EV_READ|EV_WRITE);
 }
 
+
+static void
+cb_timer(int sock, short what, void *arg) {
+  puts("DNS Cache Purged");
+  hashmap_clear(cfg.dnsmap);
+}
 
 /* start listening  */
 
@@ -775,5 +817,12 @@ start() {
     exit(1);
   }
   openconn = 0;
+
+  struct timeval one_sec = { 600, 0 };
+  struct event *ev;
+
+  ev = event_new(base, -1, EV_PERSIST, cb_timer, NULL);
+  event_add(ev, &one_sec);
+
   event_base_dispatch(base);
 }

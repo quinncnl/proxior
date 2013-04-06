@@ -2,6 +2,7 @@
 #include "config.h"
 #include <unistd.h>
 #include <sys/stat.h>
+#include <signal.h>
 
 static void
 show_help() {
@@ -52,6 +53,7 @@ int main(int argc, char *argv[])
   }
   printf("Path: %s\n", path);
 
+  signal(SIGPIPE, SIG_IGN);
   load_config(path);
   start();
 

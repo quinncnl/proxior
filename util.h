@@ -5,7 +5,6 @@
 
 struct parsed_url {
   unsigned short port;
-  char *url;
   char *host;
 };
 

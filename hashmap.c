@@ -23,6 +23,8 @@
 #include <assert.h>
 #include <string.h>
 
+#define DNS_CACHE_NUM 100
+
 static unsigned int hashfunc(const char *str, size_t size)
 {
   unsigned int hash = 0;
@@ -241,6 +243,27 @@ hashmap_remove (hashmap_t map, const char *rule)
     free(it);
 
     it = next;
+  }
+
+}
+
+void
+hashmap_clear (hashmap_t map) {
+  int i;
+  struct hashentry_s *it, *next;
+
+  for (i = 0; i < DNS_CACHE_NUM; i++) {
+    it = map->buckets[i].head;
+
+    while (it) {
+      next = it->next;
+      free(it->key);
+      free(it->data);
+      free(it);
+      it = next;
+    }
+
+    map->buckets[i].head = map->buckets[i].tail = NULL;
   }
 
 }
