@@ -99,6 +99,12 @@ rm_log(struct evbuffer *rsps) {
 }
 
 static void
+purgetrylist(struct evbuffer *rsps) {
+  hashmap_clear(cfg.trylist_hashmap);
+  evbuffer_add_printf(rsps, "OK");
+}
+
+static void
 query(struct evbuffer *rsps, char *url) 
 {
   struct rulelist *node = cfg.rulelist_head;
@@ -215,6 +221,9 @@ handle_request(void *ctx) {
     }
     else if (strcmp(path, "/rmlog") == 0) {
       rm_log(rsps);
+    }
+    else if (strcmp(path, "/purgetrylist") == 0) {
+      purgetrylist(rsps);
     }
 
     evhttp_uri_free(uri);

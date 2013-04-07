@@ -93,6 +93,7 @@ add_acl(char *proxy_name, char *list) {
 
   if (strcmp(list, "trylist") == 0) {
     map = hashmap_create(20);
+    cfg.trylist_hashmap = map;
     goto add;
   }
 

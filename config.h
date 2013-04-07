@@ -39,6 +39,7 @@ typedef struct {
   struct timeval ctimeout;
 
   struct hashmap_s *dnsmap;
+  struct hashmap_s *trylist_hashmap;
 
   char *listen_addr;
   short listen_port;

@@ -158,10 +158,11 @@ server_event(struct bufferevent *bev, short e, void *ptr)
 {
   conn_t *conn = ptr;
 
-  if (e & BEV_EVENT_CONNECTED) 
+  if (e & BEV_EVENT_CONNECTED) {
+    if (conn->be_server)
+      bufferevent_set_timeouts(conn->be_server, &cfg.timeout, &cfg.timeout);
 
-    bufferevent_set_timeouts(conn->be_server, &cfg.timeout, &cfg.timeout);
-
+  }
   else if (e & BEV_EVENT_EOF) {
     puts("server eof");
     if (conn->be_client == NULL) return;
