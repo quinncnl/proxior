@@ -165,16 +165,16 @@ server_event(struct bufferevent *bev, short e, void *ptr)
   }
   else if (e & BEV_EVENT_EOF) {
     puts("server eof");
-    if (conn->be_client == NULL) return;
 
     int left = evbuffer_get_length(bufferevent_get_output(conn->be_client)) + 
-      evbuffer_get_length(bufferevent_get_input(conn->be_server)) + 
-      evbuffer_get_length(bufferevent_get_output(conn->be_server));
+      evbuffer_get_length(bufferevent_get_input(conn->be_server));
 
     if (left == 0) {
+      // If nothing left to transfer, close connections.
       free_conn(conn);
     }
     else {
+      // Mark server closed. Close client connection when data all sent.
       conn->server_closed = 1;
     }
 
@@ -216,7 +216,7 @@ server_event(struct bufferevent *bev, short e, void *ptr)
 
 	add_to_trylist(conn->purl->host);
 	free_server(conn);
-	error_msg(bufferevent_get_output(conn->be_client), "Connection reset. Using try-proxy next time.");
+	error_msg(bufferevent_get_output(conn->be_client), "<!DOCTYPE HTML PUBLIC> <html> <head> <title>Connection Reset</title> </head> <body> <h1>Connection Reset</h1> Added to trylist. Proxior will use try-proxy to visit this domain next time. <hr> <address>Proxior 1.1.0</address> </body> </html> ");
 	return;
       }
     }
@@ -417,7 +417,7 @@ dns_cb(int result, char type, int count,
   conn_t *conn = carg->conn;
 
   if (result != DNS_ERR_NONE) {
-    dis_error_msg(conn, "Unable to resolve this domain.");
+    dis_error_msg(conn, "<!DOCTYPE HTML PUBLIC> <html> <head> <title>Domain Not Found</title> </head> <body> <h1>Domain Not Found</h1> Unable to resolve the server's DNS address. <br /><br /><br /> <hr /> <address>Proxior 1.1.0</address> </body> </html> ");
     return;
   }
 
@@ -533,8 +533,6 @@ read_direct_https_handshake_p2(conn_t *conn) {
 static void 
 read_direct_https_handshake(conn_t *ctx) {
   conn_t *conn = ctx;
-
-  // e.g. CONNECT www.wikipedia.org:443 HTTP/1.1
 
   conn->state = calloc(sizeof(struct state), 1);
 
@@ -752,13 +750,15 @@ write_client_cb(struct bufferevent *bev, void *ctx) {
   conn_t *conn = ctx;
   if (conn->be_server == NULL) return;
 
-  int left = evbuffer_get_length(bufferevent_get_input(conn->be_client)) + evbuffer_get_length(bufferevent_get_output(conn->be_server));
+  int left = evbuffer_get_length(bufferevent_get_input(conn->be_server));
 
   if (conn->server_closed && left == 0) {
+    /* All sent. Close conns. If we don't close client connection and the response header happens to contain no Content-Length, then browser will wait infinitly. */
     free_conn(conn);
   }
-  else
-    conn->server_closed = 0;
+  else if (conn->server_closed && left) 
+    return;
+
 }
 
 
