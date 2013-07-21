@@ -61,12 +61,12 @@ error_msg(struct evbuffer *output, char *msg) {
   size_t size = strlen(msg);
 
   evbuffer_add_printf(output,
-		      "HTTP/1.1 502 Bad Gateway\r\n"
-		      "Content-Type: text/html\r\n"
-		      "Access-Control-Allow-Origin: *\r\n"
-		      "Connection: close\r\n"
-		      "Cache-Control: no-cache\r\n"
-		      "Content-Length: %d\r\n\r\n", (int) size);
+					  "HTTP/1.1 502 Bad Gateway\r\n"
+					  "Content-Type: text/html\r\n"
+					  "Access-Control-Allow-Origin: *\r\n"
+					  "Connection: close\r\n"
+					  "Cache-Control: no-cache\r\n"
+					  "Content-Length: %d\r\n\r\n", (int) size);
   
   evbuffer_add(output, msg, size);
 }
@@ -189,35 +189,35 @@ server_event(struct bufferevent *bev, short e, void *ptr)
      
     if (conn->proxy == cfg.try_proxy) {
       if (cfg.try_proxy != NULL) {
-	char msg1[50] =  "Error connecting to proxy ";
-	strcat(msg1, conn->proxy->name);
-	puts(msg1);
-	error_msg(bufferevent_get_output(conn->be_client), msg1);
-	return;
+		char msg1[50] =  "Error connecting to proxy ";
+		strcat(msg1, conn->proxy->name);
+		puts(msg1);
+		error_msg(bufferevent_get_output(conn->be_client), msg1);
+		return;
 
       }
       else {
 
-	error_msg(bufferevent_get_output(conn->be_client), "No try-proxy set. Direct connection failed. Check log.");
+		error_msg(bufferevent_get_output(conn->be_client), "No try-proxy set. Direct connection failed. Check log.");
 
-	free_conn(conn);
-	return;
+		free_conn(conn);
+		return;
       }
 
     }
     else {
       if (code == ECONNRESET) {
-	if (conn->purl == NULL || conn->purl->host == NULL) {
-	  free_conn(conn);
-	  return;
-	}
+		if (conn->purl == NULL || conn->purl->host == NULL) {
+		  free_conn(conn);
+		  return;
+		}
 	  
-	perror("Connection reset. Added to temperary try-list"); 
+		perror("Connection reset. Added to temperary try-list"); 
 
-	add_to_trylist(conn->purl->host);
-	free_server(conn);
-	error_msg(bufferevent_get_output(conn->be_client), "<!DOCTYPE HTML PUBLIC> <html> <head> <title>Connection Reset</title> </head> <body> <h1>Connection Reset</h1> Added to trylist. Proxior will use try-proxy to visit this domain next time. <hr> <address>Proxior 1.1.0</address> </body> </html> ");
-	return;
+		add_to_trylist(conn->purl->host);
+		free_server(conn);
+		error_msg(bufferevent_get_output(conn->be_client), "<!DOCTYPE HTML PUBLIC> <html> <head> <title>Connection Reset</title> </head> <body> <h1>Connection Reset</h1> Added to trylist. Proxior will use try-proxy to visit this domain next time. <hr> <address>Proxior 1.1.0</address> </body> </html> ");
+		return;
       }
     }
 
@@ -257,11 +257,11 @@ prepare_connection(conn_t *conn) {
     else if (conn->purl && (strcmp(conn->purl->host, url->host) || conn->purl->port != url->port)) {
 
       if (conn->proxy) {
-	//socks5
-	free_server(conn);
-	init_remote_conn(conn);
-	free_parsed_url(url);
-	return -1;
+		//socks5
+		free_server(conn);
+		init_remote_conn(conn);
+		free_parsed_url(url);
+		return -1;
       }
 
       free_server(conn);
@@ -330,24 +330,24 @@ http_direct_process(conn_t *conn) {
     while ((line = evbuffer_readln(buffer, NULL, EVBUFFER_EOL_CRLF)) != NULL) {
 
       if (strlen(line) == 0) {
-	evbuffer_add_printf(output, "\r\n");
+		evbuffer_add_printf(output, "\r\n");
 
-	free(line);
-	s->pos = STATE_BODY;
-	goto read_body;
+		free(line);
+		s->pos = STATE_BODY;
+		goto read_body;
       }
  
       sscanf(line, "%s %s", header, header_v);
       
       if (strcmp(header, "Content-Length:") == 0)  {
-	s->length = atoi(header_v);
-	bufferevent_setwatermark(conn->be_client, EV_READ, 0, 2048);
+		s->length = atoi(header_v);
+		bufferevent_setwatermark(conn->be_client, EV_READ, 0, 2048);
 
       }
       /* Skip proxy-connection */
 	
       if (strcmp(header, "Proxy-Connection:")) {
-	evbuffer_add_printf(output, "%s\r\n", line);
+		evbuffer_add_printf(output, "%s\r\n", line);
       }
 
       free(line);
@@ -388,7 +388,7 @@ http_direct_process(conn_t *conn) {
   }
   else return;
 
-  end:
+ end:
 
   // Clean up and get ready for next request
 
@@ -410,7 +410,7 @@ struct conn_arg {
 
 static void 
 dns_cb(int result, char type, int count,
-	int ttl, void *addresses, void *arg) {
+	   int ttl, void *addresses, void *arg) {
 
   struct conn_arg * carg = arg;
 
@@ -430,9 +430,9 @@ dns_cb(int result, char type, int count,
 
   sin.sin_port = htons(carg->port);
 
-  conn->be_server = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
+  conn->be_server = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
   if (bufferevent_socket_connect(conn->be_server,
-				 (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+								 (struct sockaddr *)&sin, sizeof(sin)) < 0) {
     /* Error starting connection */
     dis_error_msg(conn, "Cannot connect to remote server.");
     return;
@@ -478,12 +478,12 @@ connect_server(char *host, int port, void (*callback)(conn_t *), conn_t *conn) {
 
   sin.sin_port = htons(port);
 
-  conn->be_server = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
+  conn->be_server = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
 
   bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
 
   if (bufferevent_socket_connect(conn->be_server,
-				 (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+								 (struct sockaddr *)&sin, sizeof(sin)) < 0) {
     /* Error starting connection */
     dis_error_msg(conn, "Cannot connect to remote server.");
     return;
@@ -517,7 +517,7 @@ read_direct_https(void *ctx) {
   conn_t *conn = ctx;
   if (conn->be_server && bufferevent_read_buffer(conn->be_client, bufferevent_get_output(conn->be_server)))
 
-  fputs("Error reading from client\n", stderr);
+	fputs("Error reading from client\n", stderr);
   return 0;
 }
 
@@ -567,7 +567,7 @@ read_direct_https_handshake(conn_t *ctx) {
 
 /* Connect to server directly. 
  * Need to take care of both http and https 
-*/
+ */
 
 static void
 read_client_direct(void *ctx) {
@@ -776,9 +776,9 @@ client_event(struct bufferevent *bev, short e, void *ptr) {
 
 static void
 accept_conn_cb(struct evconnlistener *listener,
-	       evutil_socket_t fd, struct sockaddr *address, int socklen,
-	       void *ctx) {
-  struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
+			   evutil_socket_t fd, struct sockaddr *address, int socklen,
+			   void *ctx) {
+  struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
 
   conn_t *conn = calloc(sizeof(conn_t), 1);
 
@@ -811,8 +811,8 @@ start() {
   sin.sin_port = htons(cfg.listen_port);
 
   listener = evconnlistener_new_bind(base, accept_conn_cb, NULL,
-				     LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, -1,
-				     (struct sockaddr*)&sin, sizeof(sin));
+									 LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, 16,
+									 (struct sockaddr*)&sin, sizeof(sin));
   if(!listener) {
     perror("Unable to create listener");
     exit(1);
