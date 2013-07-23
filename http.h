@@ -35,13 +35,19 @@ typedef struct conn
   /*  Used to track current http state */
   struct state *state; 
 
+  int response_header;
+  int response_left;
+  int no_length;
+  int is_chunked;
+  int chunk_over;
+  int connection_close;
+  int chunk_left;
 } conn_t;
 
 
 struct state {
   /* for content section */
   int length, read, wrote; 
-  
   enum {
     STATE_REQ_LINE, //req line to be read
     STATE_HEADER, 

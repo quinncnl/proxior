@@ -76,10 +76,140 @@ error_msg(struct evbuffer *output, char *msg) {
 void
 read_server(struct bufferevent *bev, void *ctx) {
   conn_t *conn = ctx;
+  int read;
+  struct evbuffer *output, *buffer;
+  output = bufferevent_get_output(conn->be_client);
+  buffer = bufferevent_get_input(conn->be_server);
 
-  if (conn->be_client && bufferevent_read_buffer(bev, bufferevent_get_output(conn->be_client))) 
-    fputs("Error reading from server.", stderr);
+  if(strcmp(conn->method, "CONNECT") == 0){
+	int s;
+	while((s=evbuffer_remove_buffer(buffer, output, 1024))>0)
+	  printf("connect read size: %d\n", s);
+	return;
+  }
 
+  char *line;
+  char header[64], header_v[2500];
+  
+  if(conn->response_header == 1){
+	while ((line = evbuffer_readln(buffer, NULL, EVBUFFER_EOL_CRLF)) != NULL) {
+	  puts(line);
+	  if (strlen(line) == 0) {
+		//puts("BREAK");
+		evbuffer_add_printf(output, "\r\n");
+		conn->response_header = 0;
+		if(conn->response_left == 0)
+		  conn->no_length = 1;
+
+		break;
+	  }
+
+      sscanf(line, "%s %s", header, header_v);
+      
+      if (strcmp(header, "Content-Length:") == 0)  {
+		conn->response_left = atoi(header_v);
+		conn->is_chunked = 0;
+      }
+	  else if (strcmp(header, "Connection:") == 0)  {
+		if(strcmp(header_v, "close") == 0)
+		  conn->connection_close = 1;
+		else
+		  conn->connection_close = 0;
+      }
+	  else if (strcmp(line, "Transfer-Encoding: chunked") == 0)  {
+		conn->is_chunked = 1;
+      }
+
+	  evbuffer_add_printf(output, "%s\r\n", line);
+	}
+  }
+  int size;
+  // body
+  if(conn->is_chunked == 0){
+	size = evbuffer_get_length(buffer);
+	while((read = evbuffer_remove_buffer(buffer, output, 1024)) > 0){
+	  printf("not chunked read: %d\n", size);
+	  conn->response_left -= read;
+	}
+
+	printf("not chunked left: %d\n", conn->response_left);
+
+	if (conn->response_left == 0){
+	  conn->response_header = 1;
+	}
+	return;
+  }
+  else {
+	// chunked
+	long int len;
+
+	if(	conn->chunk_left > 0){
+	  read = evbuffer_remove_buffer(buffer, output, conn->chunk_left);
+	  conn->chunk_left -= read;
+
+	  if (conn->chunk_left > 0) 
+		return;
+	  else if (conn->chunk_left == 0){
+		evbuffer_add_printf(output, "\r\n");
+		if(evbuffer_drain(buffer, 2)==-1)
+		  puts("fail to drain");
+
+	  }
+	}
+
+	while ((line = evbuffer_readln(buffer, NULL, EVBUFFER_EOL_CRLF)) != NULL) {
+
+	  if(strlen(line)==0){
+		puts("yyyyyyyyyyyyyyyyy");
+		return;
+	  }
+
+	  len = strtol(line, NULL, 16);
+	  printf("------:%s:-------\n", line);
+
+
+	  // write chunk size
+	  evbuffer_add_printf(output, "%s\r\n", line);
+	  size = evbuffer_get_length(buffer);
+	  conn->chunk_left = len;
+
+	  if(len == 0){
+		printf("end of response: %d\n", conn->chunk_left);
+		evbuffer_add_printf(output, "\r\n");
+		conn->connection_close = 1;
+		conn->chunk_over = 1;
+		return;
+	  }
+
+	  printf("size1: %d, left: %d\n", size, conn->chunk_left);
+	  if(size == 0)
+		return;
+
+	  read = evbuffer_remove_buffer(buffer, output, len);
+
+	  conn->chunk_left -= read;
+
+	  printf("chunk_left: %d\n", conn->chunk_left);
+
+	  if(conn->chunk_left == 0){
+
+		evbuffer_add_printf(output, "\r\n");
+		puts("finished");
+		if(evbuffer_drain(buffer, 2)==-1)
+		  puts("fail to drain");
+
+		size = evbuffer_get_length(buffer);
+		printf("size2: %d\n", size);
+		if(size == 0) return;
+	  }
+	  else{
+		puts("not finished");
+
+		size = evbuffer_get_length(buffer);
+		printf("size2: %d\n", size);
+	  }
+	}
+  }
 }
 
 void
@@ -165,19 +295,7 @@ server_event(struct bufferevent *bev, short e, void *ptr)
   }
   else if (e & BEV_EVENT_EOF) {
     puts("server eof");
-
-    int left = evbuffer_get_length(bufferevent_get_output(conn->be_client)) + 
-      evbuffer_get_length(bufferevent_get_input(conn->be_server));
-
-    if (left == 0) {
-      // If nothing left to transfer, close connections.
-      free_conn(conn);
-    }
-    else {
-      // Mark server closed. Close client connection when data all sent.
-      conn->server_closed = 1;
-    }
-
+	conn->server_closed = 1;
   }
   else if (e & (BEV_EVENT_ERROR)) {
     int code = evutil_socket_geterror(bufferevent_getfd(conn->be_server)); 
@@ -341,7 +459,7 @@ http_direct_process(conn_t *conn) {
       
       if (strcmp(header, "Content-Length:") == 0)  {
 		s->length = atoi(header_v);
-		bufferevent_setwatermark(conn->be_client, EV_READ, 0, 2048);
+		bufferevent_setwatermark(conn->be_client, EV_READ, 0, 1024);
 
       }
       /* Skip proxy-connection */
@@ -377,7 +495,7 @@ http_direct_process(conn_t *conn) {
 
     if (outsize > 0) return;
 
-    int read = evbuffer_remove_buffer(buffer, output, 4096);
+    int read = evbuffer_remove_buffer(buffer, output, 1024);
 
     s->read += read;
     //    printf("%d %d\n", s->read, s->length);
@@ -430,7 +548,7 @@ dns_cb(int result, char type, int count,
 
   sin.sin_port = htons(carg->port);
 
-  conn->be_server = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+  conn->be_server = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
   if (bufferevent_socket_connect(conn->be_server,
 								 (struct sockaddr *)&sin, sizeof(sin)) < 0) {
     /* Error starting connection */
@@ -439,7 +557,10 @@ dns_cb(int result, char type, int count,
   }
 
   bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
+
   bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
+
+  bufferevent_setwatermark(conn->be_server, EV_READ, 0, 1024);
 
   hashmap_insert_ip(cfg.dnsmap, carg->host, addresses);
 
@@ -478,7 +599,7 @@ connect_server(char *host, int port, void (*callback)(conn_t *), conn_t *conn) {
 
   sin.sin_port = htons(port);
 
-  conn->be_server = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+  conn->be_server = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
 
   bufferevent_setcb(conn->be_server, read_server, NULL, server_event, conn);
 
@@ -748,16 +869,36 @@ read_client_cb(struct bufferevent *bev, void *ctx) {
 static void
 write_client_cb(struct bufferevent *bev, void *ctx) {
   conn_t *conn = ctx;
-  if (conn->be_server == NULL) return;
 
-  int left = evbuffer_get_length(bufferevent_get_input(conn->be_server));
-
-  if (conn->server_closed && left == 0) {
-    /* All sent. Close conns. If we don't close client connection and the response header happens to contain no Content-Length, then browser will wait infinitly. */
-    free_conn(conn);
+  if(conn->no_length){
+	if(conn->server_closed){
+	  free_conn(conn);
+	  return;
+	}
+	else
+	  return;
   }
-  else if (conn->server_closed && left) 
-    return;
+
+  if(conn->server_closed == 1 && conn->response_left < 0){
+	printf("closing conn, left:%d\n", conn->response_left);
+	free_conn(conn);
+	return;
+  }
+
+  if(conn->connection_close == 0 && 
+	 (( conn->is_chunked == 0 && conn->response_left == 0) || (conn->is_chunked == 1 && conn->chunk_over == 1 ))){
+	conn->chunk_over = 0;
+	conn->is_chunked = 0;
+	conn->response_left = 0;
+  }
+
+  if (conn->connection_close == 0)
+	return;
+
+  if(conn->is_chunked == 0 && conn->response_left == 0 || conn->is_chunked == 1 && conn->chunk_over == 1 ){
+	free_conn(conn);
+	puts("wrote, free conn");
+  }
 
 }
 
@@ -769,6 +910,8 @@ client_event(struct bufferevent *bev, short e, void *ptr) {
   /* If client closes the connection, we can safely free server conn. */
 
   if (e & (BEV_EVENT_ERROR | BEV_EVENT_TIMEOUT | BEV_EVENT_EOF)){
+
+	puts("client close");
     free_conn(conn);
 
   }
@@ -778,11 +921,12 @@ static void
 accept_conn_cb(struct evconnlistener *listener,
 			   evutil_socket_t fd, struct sockaddr *address, int socklen,
 			   void *ctx) {
-  struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+  struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
 
   conn_t *conn = calloc(sizeof(conn_t), 1);
 
   conn->be_client = bev;
+  conn->response_header = 1;
 
   bufferevent_setcb(bev, read_client_cb, write_client_cb, client_event, conn);
   bufferevent_enable(bev, EV_READ|EV_WRITE);
@@ -811,7 +955,7 @@ start() {
   sin.sin_port = htons(cfg.listen_port);
 
   listener = evconnlistener_new_bind(base, accept_conn_cb, NULL,
-									 LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, 16,
+									 LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, 128,
 									 (struct sockaddr*)&sin, sizeof(sin));
   if(!listener) {
     perror("Unable to create listener");
