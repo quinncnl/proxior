@@ -83,7 +83,7 @@ read_server(struct bufferevent *bev, void *ctx) {
 
   if(strcmp(conn->method, "CONNECT") == 0){
 	int s;
-	while((s=evbuffer_remove_buffer(buffer, output, 1024))>0)
+	while((s = evbuffer_remove_buffer(buffer, output, 1024)) > 0)
 	  printf("connect read size: %d\n", s);
 	return;
   }
@@ -109,12 +109,14 @@ read_server(struct bufferevent *bev, void *ctx) {
       if (strcmp(header, "Content-Length:") == 0)  {
 		conn->response_left = atoi(header_v);
 		conn->is_chunked = 0;
+		printf("length found: %d\n", conn->response_left);
       }
 	  else if (strcmp(header, "Connection:") == 0)  {
 		if(strcmp(header_v, "close") == 0)
 		  conn->connection_close = 1;
 		else
 		  conn->connection_close = 0;
+
       }
 	  else if (strcmp(line, "Transfer-Encoding: chunked") == 0)  {
 		conn->is_chunked = 1;
@@ -126,9 +128,9 @@ read_server(struct bufferevent *bev, void *ctx) {
   int size;
   // body
   if(conn->is_chunked == 0){
-	size = evbuffer_get_length(buffer);
+
 	while((read = evbuffer_remove_buffer(buffer, output, 1024)) > 0){
-	  printf("not chunked read: %d\n", size);
+	  printf("not chunked read: %d\n", read);
 	  conn->response_left -= read;
 	}
 
@@ -459,7 +461,7 @@ http_direct_process(conn_t *conn) {
       
       if (strcmp(header, "Content-Length:") == 0)  {
 		s->length = atoi(header_v);
-		bufferevent_setwatermark(conn->be_client, EV_READ, 0, 1024);
+		bufferevent_setwatermark(conn->be_client, EV_READ, 0, 4096);
 
       }
       /* Skip proxy-connection */
@@ -560,7 +562,7 @@ dns_cb(int result, char type, int count,
 
   bufferevent_enable(conn->be_server, EV_READ|EV_WRITE);
 
-  bufferevent_setwatermark(conn->be_server, EV_READ, 0, 1024);
+  bufferevent_setwatermark(conn->be_server, EV_READ, 0, 4096);
 
   hashmap_insert_ip(cfg.dnsmap, carg->host, addresses);
 
@@ -870,32 +872,29 @@ static void
 write_client_cb(struct bufferevent *bev, void *ctx) {
   conn_t *conn = ctx;
 
-  if(conn->no_length){
-	if(conn->server_closed){
-	  free_conn(conn);
-	  return;
-	}
-	else
-	  return;
-  }
+  if(strcmp(conn->method, "CONNECT") == 0)
+	return;
 
-  if(conn->server_closed == 1 && conn->response_left < 0){
-	printf("closing conn, left:%d\n", conn->response_left);
+  // no length
+  if(conn->no_length == 1 && conn->server_closed == 1){
 	free_conn(conn);
 	return;
   }
 
+  // connection keep alive and finished transfer
   if(conn->connection_close == 0 && 
 	 (( conn->is_chunked == 0 && conn->response_left == 0) || (conn->is_chunked == 1 && conn->chunk_over == 1 ))){
+	puts("close");
 	conn->chunk_over = 0;
 	conn->is_chunked = 0;
 	conn->response_left = 0;
+	conn->lock_request = 0;
   }
 
-  if (conn->connection_close == 0)
-	return;
+  // connection close and finished transfer
+  if(conn->connection_close == 1 &&
+	 ((conn->is_chunked == 0 && conn->response_left == 0) || (conn->is_chunked == 1 && conn->chunk_over == 1 ))) {
 
-  if(conn->is_chunked == 0 && conn->response_left == 0 || conn->is_chunked == 1 && conn->chunk_over == 1 ){
 	free_conn(conn);
 	puts("wrote, free conn");
   }

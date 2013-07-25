@@ -42,8 +42,12 @@ typedef struct conn
   int chunk_over;
   int connection_close;
   int chunk_left;
+
 } conn_t;
 
+struct _request {
+
+}
 
 struct state {
   /* for content section */
